@@ -1,5 +1,6 @@
-import { Token } from "../Token.js";
-import type { ReportError } from "./ReportError.js";
+import type { Input } from "./Input.js";
+import type { MessageBus } from "./MessageBus.js";
+import { reportToConsole, type ReportError } from "./ReportError.js";
 
 export class InvalidInputError extends Error {
   constructor(message: string, readonly details?: unknown) {
@@ -28,13 +29,9 @@ export function problem(status: number, slug: string, title: string, detail?: st
   });
 }
 
-/** Where a controller sends its DTO: the message bus of the request. */
-export interface Dispatcher<Dto, Output> { execute(dto: Dto): Promise<Output>; }
-
-export const Dispatcher = new Token<Dispatcher<unknown, unknown>>();
-
-export abstract class Controller<Dto, Output> {
-  constructor(private bus: Dispatcher<Dto, Output>, private reportError: ReportError = error => { console.error(error); }) {}
+/** Turns a request into an input DTO, sends it to the message bus of the request, and turns the output or the error into a response. */
+export abstract class Controller<Dto extends Input<Output>, Output> {
+  constructor(private bus: MessageBus, private reportError: ReportError = reportToConsole) {}
 
   protected abstract toDto(request: Request): Dto | Promise<Dto>;
 
@@ -54,7 +51,7 @@ export abstract class Controller<Dto, Output> {
     try {
       let output: Output;
       try {
-        output = await this.bus.execute(await this.toDto(request));
+        output = await this.bus.send(await this.toDto(request));
       } catch (error) {
         return await this.toErrorResponse(error, request);
       }

@@ -50,7 +50,7 @@ export function createTestApplication() {
 
   return {
     /** Sends an input DTO to the message bus of the context that handles it. */
-    execute: <Output>(input: Input<Output>): Promise<Output> => frontend(ownerOf(input)).bus.execute(input),
+    send: <Output>(input: Input<Output>): Promise<Output> => frontend(ownerOf(input)).bus.send(input),
     /** The dependency with this token, built now if no handler needed it before. */
     get: <T>(token: Token<T>): T => {
       const found = holders(token);

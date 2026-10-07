@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { EventBus } from "./EventBus.js";
+import { FrontendEventBus } from "./FrontendEventBus.js";
 
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("an event bus", () => {
   test("delivers an event to every subscriber, until they unsubscribe", () => {
-    const bus = new EventBus<string>();
+    const bus = new FrontendEventBus<string>();
     const first: string[] = [];
     const second: string[] = [];
     const stopFirst = bus.subscribe(event => first.push(event));
@@ -21,7 +21,7 @@ describe("an event bus", () => {
   test("reports a failing subscriber without keeping the others from the event", () => {
     const reported: unknown[] = [];
     const received: string[] = [];
-    const bus = new EventBus<string>(error => reported.push(error));
+    const bus = new FrontendEventBus<string>(error => reported.push(error));
     bus.subscribe(() => { throw new Error("subscriber down"); });
     bus.subscribe(event => received.push(event));
 
@@ -32,7 +32,7 @@ describe("an event bus", () => {
   });
 
   test("a subscriber that unsubscribes while being notified does not change who is notified of this event", () => {
-    const bus = new EventBus<string>();
+    const bus = new FrontendEventBus<string>();
     const first: string[] = [];
     const received: string[] = [];
     const stop = bus.subscribe(event => { first.push(event); stop(); });
@@ -45,7 +45,7 @@ describe("an event bus", () => {
   });
 
   test("an event published during a delivery waits until every subscriber has received the current one", () => {
-    const bus = new EventBus<string>();
+    const bus = new FrontendEventBus<string>();
     const received: string[] = [];
     bus.subscribe(event => { if (event === "request") bus.publish("answer"); });
     bus.subscribe(event => received.push(event));
@@ -56,7 +56,7 @@ describe("an event bus", () => {
   });
 
   test("a reporter that fails does not block the bus", () => {
-    const bus = new EventBus<string>(() => { throw new Error("reporter down"); });
+    const bus = new FrontendEventBus<string>(() => { throw new Error("reporter down"); });
     const received: string[] = [];
     const stop = bus.subscribe(() => { throw new Error("subscriber down"); });
 
@@ -70,7 +70,7 @@ describe("an event bus", () => {
 
   test("reports to the console when nobody said where to report", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const bus = new EventBus<string>();
+    const bus = new FrontendEventBus<string>();
     bus.subscribe(() => { throw new Error("subscriber down"); });
 
     bus.publish("a");

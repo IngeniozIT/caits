@@ -1,17 +1,17 @@
 import { describe, expect, test } from "vitest";
-import { EventBus } from "../messaging/EventBus.js";
+import { FrontendEventBus } from "../messaging/FrontendEventBus.js";
 import { createStore } from "./createStore.js";
 import { follow } from "./follow.js";
 
 type Event = { type: "set"; value: number };
 
 const setup = () => {
-  const events = new EventBus<Event>();
+  const events = new FrontendEventBus<Event>();
   const store = createStore<number, Event>({
     initialState: 1,
     reduce: (_state, event) => event.value,
     send: () => undefined
-  }, { events, bus: { execute: () => Promise.resolve() } });
+  }, { events, bus: { send: () => Promise.resolve(undefined as never) } });
   const shown: string[] = [];
   return { events, store, shown, show: (view: string) => { shown.push(view); } };
 };

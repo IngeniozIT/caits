@@ -80,19 +80,19 @@ describe("a frontend built by the kernel", () => {
   test("with its message bus, for the tests of the application: a DTO goes to the handler, and its events reach the store", async () => {
     const { bus, store: built } = createFrontendWithBus(context, quiet);
 
-    await bus.execute(new Ping("hi"));
+    await bus.send(new Ping("hi"));
 
     expect(built.getState()).toEqual(["HI"]);
   });
 
   test("a test reads a dependency by its token, and gives the one that the handlers use from now on, even after they used their own", async () => {
     const { bus, store: built, get, use } = createFrontendWithBus(context, quiet);
-    await bus.execute(new Ping("hi"));
+    await bus.send(new Ping("hi"));
     expect(get(Echo).say("ho")).toBe("HO");
 
     const replaced: Echo = { say: () => "replaced" };
     expect(use(Echo, replaced)).toBe(replaced);
-    await bus.execute(new Ping("hi"));
+    await bus.send(new Ping("hi"));
 
     expect(built.getState()).toEqual(["HI", "replaced"]);
   });

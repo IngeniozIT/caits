@@ -4,7 +4,7 @@ import type { Binding } from "../../di/Container.js";
 import { createBackend } from "../../di/createBackend.js";
 import { discovered } from "../../di/discovered.js";
 import type { DomainEvent } from "../../DomainEvent.js";
-import type { Published } from "../../messaging/SharedBus.js";
+import type { Published } from "../../messaging/BackendEventBus.js";
 
 /** The test.di.ts of each context, and of shared: the bindings that replace, in tests, those that reach outside the process. */
 const testBindings: Record<string, readonly Binding[]> = Object.fromEntries(
@@ -47,7 +47,7 @@ export function createTestApplication() {
 
   return {
     /** Sends an input DTO to the message bus of the context that handles it. */
-    execute: backend.execute,
+    send: backend.send,
     /** The dependency with this token, built now if no handler needed it before. */
     get: backend.get,
     /** Gives the dependency that the app uses from now on: a test builds its own Fake, and keeps it to arrange and check it. */

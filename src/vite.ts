@@ -6,7 +6,7 @@ import { declareDependencies } from "./di/declareDependencies.ts";
 /** The name of this package: the app imports the tokens of the kernel (EventPublisher, DataDirectory, Fetcher…) with it. */
 const KERNEL = "@ingeniozits/kernel";
 
-/** The folder of the kernel: its classes and its tokens need the same code (a Controller gets its Dispatcher, a token its name). */
+/** The folder of the kernel: its classes and its tokens need the same code (a Controller gets its MessageBus, a token its name). */
 const OWN_FOLDER = `${normalizePath(import.meta.dirname)}/`;
 
 export type KernelOptions = {

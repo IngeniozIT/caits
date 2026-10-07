@@ -11,13 +11,13 @@ const nextTurn = () => new Promise(resolve => { setTimeout(resolve, 0); });
  * Carries the events of the contexts. The context map turns each event into input DTOs, and each input goes to the context that
  * handles it. The publisher never waits for the reactions; every failure is reported.
  */
-export class SharedBus {
+export class BackendEventBus {
   private inFlight = new Set<Promise<void>>();
   private listeners = new Set<(published: Published) => void>();
 
   constructor(private readonly options: {
     map: ContextMap;
-    deliver: (input: Input<unknown>, envelope: Envelope) => Promise<unknown>;
+    send: (input: Input<unknown>, envelope: Envelope) => Promise<unknown>;
     nextEventId: () => string;
     reportError: ReportError;
   }) {}
@@ -54,7 +54,7 @@ export class SharedBus {
       this.options.reportError(error);
       return;
     }
-    const results = await Promise.allSettled(inputs.map(input => this.options.deliver(input, envelope)));
+    const results = await Promise.allSettled(inputs.map(input => this.options.send(input, envelope)));
     for (const result of results) if (result.status === "rejected") this.options.reportError(result.reason);
   }
 }

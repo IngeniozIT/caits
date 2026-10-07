@@ -1,7 +1,7 @@
-import { EventBus } from "../messaging/EventBus.js";
+import { FrontendEventBus } from "../messaging/FrontendEventBus.js";
 import { EventPublisher } from "../messaging/EventPublisher.js";
 import type { EventSubscriber } from "../messaging/EventSubscriber.js";
-import { MessageBus } from "../messaging/MessageBus.js";
+import { InProcessMessageBus } from "../messaging/InProcessMessageBus.js";
 import { createStore, type Store } from "../state/createStore.js";
 import type { Token } from "../Token.js";
 import { bind, Container, type Binding } from "./Container.js";
@@ -16,9 +16,9 @@ type Handler = new () => { execute(input: unknown): unknown };
  * EventPublisher. The store gets it as its EventSubscriber.
  */
 function build(context: FrontendModules, fetch: Fetcher, replace: readonly Binding[]) {
-  const events = new EventBus<unknown>();
+  const events = new FrontendEventBus<unknown>();
   const container = new Container([bind(Fetcher).toValue(fetch), bind(EventPublisher).toValue(events), ...context.bindings, ...replace]);
-  const bus = new MessageBus();
+  const bus = new InProcessMessageBus();
   // A handler is built for each DTO: it always gets the dependencies that the container holds at that time. A dependency that
   // nothing gives is refused now, not when a DTO arrives.
   for (const { input, handler } of context.useCases) {

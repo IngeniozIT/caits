@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { EventBus } from "../messaging/EventBus.js";
+import { FrontendEventBus } from "../messaging/FrontendEventBus.js";
 import { createStore } from "./createStore.js";
 import { request } from "./request.js";
 
@@ -7,12 +7,12 @@ type Event = { type: "asked" } | { type: "answered"; answer: string };
 type State = { answer: string | undefined };
 
 const setup = () => {
-  const events = new EventBus<Event>();
+  const events = new FrontendEventBus<Event>();
   const store = createStore<State, Event>({
     initialState: { answer: "old" },
     reduce: (_state, event) => ({ answer: event.type === "answered" ? event.answer : undefined }),
     send: () => undefined
-  }, { events, bus: { execute: () => Promise.resolve() } });
+  }, { events, bus: { send: () => Promise.resolve(undefined as never) } });
   return { events, store, frontend: { events, store } };
 };
 

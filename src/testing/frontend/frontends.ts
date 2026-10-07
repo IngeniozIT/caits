@@ -1,4 +1,4 @@
-import { EventBus } from "../../messaging/EventBus.js";
+import { FrontendEventBus } from "../../messaging/FrontendEventBus.js";
 import type { Input } from "../../messaging/Input.js";
 import { createStore, type StoreDefinition } from "../../state/createStore.js";
 import type { Frontend } from "../../state/request.js";
@@ -13,10 +13,10 @@ type EventOf<F> = F extends Frontend<unknown, infer E> ? E : never;
  * records the DTOs it receives, and answers nothing. A test publishes the events of the handlers itself.
  */
 export function testPresentation<Name extends keyof Frontends>(name: Name): Frontend<StateOf<Frontends[Name]>, EventOf<Frontends[Name]>> & { sent: Input<unknown>[] } {
-  const events = new EventBus<EventOf<Frontends[Name]>>();
+  const events = new FrontendEventBus<EventOf<Frontends[Name]>>();
   const sent: Input<unknown>[] = [];
   const definition = discoveredFrontends[name].store as StoreDefinition<StateOf<Frontends[Name]>, EventOf<Frontends[Name]>>;
-  const store = createStore(definition, { events, bus: { execute: input => { sent.push(input); return Promise.resolve(); } } });
+  const store = createStore(definition, { events, bus: { send: <Output>(input: Input<Output>) => { sent.push(input); return Promise.resolve(undefined as Output); } } });
   return { events, store, sent };
 }
 

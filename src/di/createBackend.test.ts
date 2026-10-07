@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { DomainEvent } from "../DomainEvent.js";
-import { Controller, Dispatcher } from "../messaging/Controller.js";
+import { Controller } from "../messaging/Controller.js";
 import type { EventPublisher } from "../messaging/EventPublisher.js";
 import { when } from "../messaging/ContextMap.js";
 import { Input } from "../messaging/Input.js";
+import { MessageBus } from "../messaging/MessageBus.js";
 import { Token } from "../Token.js";
 import { bind } from "./Container.js";
 import { createBackend } from "./createBackend.js";
@@ -58,7 +59,7 @@ afterEach(() => { vi.restoreAllMocks(); });
 describe("a backend built from the bindings of its contexts", () => {
   test("sends an input to the context that handles it, whose events reach the other contexts without making it wait", async () => {
     const backend = createBackend(modules(), { nextEventId: () => "e1" });
-    expect(await backend.execute(new Greet("Ada"))).toBe("Hello Ada");
+    expect(await backend.send(new Greet("Ada"))).toBe("Hello Ada");
     expect(backend.get(Memory)).toEqual([]);
     await backend.settled();
     expect(backend.get(Memory)).toEqual(["Ada@system"]);
@@ -66,7 +67,7 @@ describe("a backend built from the bindings of its contexts", () => {
 
   test("each request carries its correlation id to the reactions of the other contexts", async () => {
     const backend = createBackend(modules());
-    await backend.execute(new Greet("Ada"), { correlationId: "req-1" });
+    await backend.send(new Greet("Ada"), { correlationId: "req-1" });
     await backend.settled();
     expect(backend.get(Memory)).toEqual(["Ada@req-1"]);
   });
@@ -78,10 +79,10 @@ describe("a backend built from the bindings of its contexts", () => {
     expect(backend.controller(GreetController)).not.toBe(backend.controller(GreetController));
   });
 
-  test("a Dispatcher bound in shared takes the place of the message bus of the requests: a test reads the DTOs that the controllers send", async () => {
+  test("a MessageBus bound in shared takes the place of the message bus of the requests: a test reads the DTOs that the controllers send", async () => {
     const sent: unknown[] = [];
-    const dispatcher: Dispatcher<unknown, unknown> = { execute: dto => { sent.push(dto); return Promise.resolve("recorded"); } };
-    const backend = createBackend(modules(), { replace: { shared: [bind(Dispatcher).toValue(dispatcher)] } });
+    const bus: MessageBus = { send: dto => { sent.push(dto); return Promise.resolve("recorded" as never); } };
+    const backend = createBackend(modules(), { replace: { shared: [bind(MessageBus).toValue(bus)] } });
     const response = await backend.controller(GreetController).handle(new Request("http://localhost/?name=Bob"));
     expect(await response.text()).toBe("recorded");
     expect(sent).toEqual([new Greet("Bob")]);
@@ -89,7 +90,7 @@ describe("a backend built from the bindings of its contexts", () => {
 
   test("refuses an input or a controller no context owns", async () => {
     const backend = createBackend(modules());
-    await expect(backend.execute(new Unknown())).rejects.toThrow("No context owns Unknown");
+    await expect(backend.send(new Unknown())).rejects.toThrow("No context owns Unknown");
     expect(() => backend.controller(class Stray {})).toThrow("No context owns Stray");
   });
 
@@ -97,8 +98,8 @@ describe("a backend built from the bindings of its contexts", () => {
     const memory = vi.fn(() => []);
     const backend = createBackend({ ...modules(), contexts: { ...modules().contexts, memory: { ...modules().contexts.memory, bindings: [bind(Memory).toFactory(memory)] } } });
     expect(memory).not.toHaveBeenCalled();
-    await backend.execute(new Remember("a"));
-    await backend.execute(new Remember("b"));
+    await backend.send(new Remember("a"));
+    await backend.send(new Remember("b"));
     expect(memory).toHaveBeenCalledTimes(1);
   });
 
@@ -108,12 +109,12 @@ describe("a backend built from the bindings of its contexts", () => {
 
   test("the bindings given replace those of a context, or those of shared for every context", async () => {
     const backend = createBackend(modules(), { replace: { shared: [bind(Greeting).toValue("Hi")], memory: [bind(Memory).toFactory(() => ["kept"])] } });
-    expect(await backend.execute(new Greet("Ada"))).toBe("Hi Ada");
+    expect(await backend.send(new Greet("Ada"))).toBe("Hi Ada");
     await backend.settled();
     expect(backend.get(Memory)).toEqual(["kept", "Ada@system"]);
     expect(backend.get(Greeting)).toBe("Hi");
     const greeter = createBackend(modules(), { replace: { shared: [bind(Greeting).toValue("Hi")], greeter: [bind(Greeting).toValue("Hey")] } });
-    expect(await greeter.execute(new Greet("Ada"))).toBe("Hey Ada");
+    expect(await greeter.send(new Greet("Ada"))).toBe("Hey Ada");
   });
 
   test("a shared dependency is built once, for every context", async () => {
@@ -121,7 +122,7 @@ describe("a backend built from the bindings of its contexts", () => {
     const backend = createBackend({ ...modules(), shared: [...modules().shared, bind(Box).toFactory(box)] }, { replace: { greeter: [bind(Greeting).toValue("Hi")] } });
     expect(backend.get(Box)).toBe(backend.get(Box));
     expect(box).toHaveBeenCalledTimes(1);
-    expect(await backend.execute(new Greet("Ada"))).toBe("Hi Ada");
+    expect(await backend.send(new Greet("Ada"))).toBe("Hi Ada");
   });
 
   test("a test reads a dependency by its token, but not one that nothing binds, or that two contexts each bind", () => {
@@ -134,11 +135,11 @@ describe("a backend built from the bindings of its contexts", () => {
 
   test("a test gives the dependency that the contexts use from now on, even after they built their own", async () => {
     const backend = createBackend(modules());
-    await backend.execute(new Remember("Ada"));
+    await backend.send(new Remember("Ada"));
     const kept: string[] = [];
     expect(backend.use(Memory, kept)).toBe(kept);
     backend.use(Greeting, "Hi");
-    expect(await backend.execute(new Greet("Bob"))).toBe("Hi Bob");
+    expect(await backend.send(new Greet("Bob"))).toBe("Hi Bob");
     await backend.settled();
     expect(kept).toEqual(["Bob@system"]);
     expect(() => backend.use(new Token("nothing"), 1)).toThrow("No context binds nothing");
@@ -163,7 +164,7 @@ describe("a backend built from the bindings of its contexts", () => {
     const backend = createBackend(modules(), { replace: { memory: [bind(Memory).toFactory(() => { throw new Error("memory lost"); })] } });
     const seen: string[] = [];
     backend.subscribe(({ envelope }) => seen.push(envelope.eventId));
-    expect(await backend.execute(new Greet("Ada"))).toBe("Hello Ada");
+    expect(await backend.send(new Greet("Ada"))).toBe("Hello Ada");
     await backend.settled();
     expect(seen).toEqual([expect.stringMatching(/^[0-9a-f-]{36}$/)]);
     expect(console).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("memory lost") as string }));

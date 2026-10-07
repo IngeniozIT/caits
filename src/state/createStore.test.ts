@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { EventBus } from "../messaging/EventBus.js";
+import { FrontendEventBus } from "../messaging/FrontendEventBus.js";
 import { FakeMessageBus } from "../testing/shared/FakeMessageBus.js";
 import { Input } from "../messaging/Input.js";
 import { createStore, type StoreDefinition } from "./createStore.js";
@@ -18,7 +18,7 @@ const total: StoreDefinition<number, Event> = {
 };
 
 const setup = (reportError?: (error: unknown) => void) => {
-  const events = new EventBus<Event>();
+  const events = new FrontendEventBus<Event>();
   const bus = new FakeMessageBus();
   const store = createStore(total, { events, bus, ...(reportError ? { reportError } : {}) });
   return { events, bus, store };
@@ -69,8 +69,8 @@ describe("a store", () => {
 
   test("reads the state before the event to decide what to send, and tells its subscribers before it sends", () => {
     const sent: unknown[] = [];
-    const events = new EventBus<Event>();
-    const store = createStore({ ...total, reduce: () => 100 }, { events, bus: { execute: async input => { sent.push([input, store.getState()]); } } });
+    const events = new FrontendEventBus<Event>();
+    const store = createStore({ ...total, reduce: () => 100 }, { events, bus: { send: async input => { sent.push([input, store.getState()]); return undefined as never; } } });
 
     events.publish({ type: "save" });
 

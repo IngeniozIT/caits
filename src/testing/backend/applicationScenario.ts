@@ -44,7 +44,7 @@ export class ApplicationScenario<Output> {
 
   private async run(): Promise<Result<Output>> {
     try {
-      return { output: await this.app.execute(this.dto) };
+      return { output: await this.app.send(this.dto) };
     } catch (error) {
       return { error };
     }

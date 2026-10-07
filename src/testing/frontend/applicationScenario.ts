@@ -26,7 +26,7 @@ export class ApplicationScenario implements PromiseLike<void> {
 
   private async run(): Promise<void> {
     const from = this.app.published.length;
-    await this.app.execute(this.dto);
+    await this.app.send(this.dto);
     expect(this.app.published.slice(from), "the published events").toEqual(expect.arrayContaining(this.expected));
   }
 }

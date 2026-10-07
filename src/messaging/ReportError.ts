@@ -4,3 +4,6 @@ import { Token } from "../Token.js";
 export type ReportError = (error: unknown) => void;
 
 export const ReportError = new Token<ReportError>();
+
+/** Where a failure goes when nobody says where: the console. */
+export const reportToConsole: ReportError = error => { console.error(error); };

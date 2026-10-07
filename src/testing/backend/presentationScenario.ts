@@ -16,7 +16,7 @@ export class PresentationScenario {
     return this;
   }
 
-  expectItToEmit(message: object): this {
+  expectItToSend(message: object): this {
     this.app.messageBus.expect(message);
     return this;
   }
@@ -33,7 +33,7 @@ export class PresentationScenario {
 
   async expectTheResponseToBe(status: number, body?: unknown, headers: Record<string, string> = {}): Promise<void> {
     if (this.request === undefined) throw new Error("PresentationScenario: call givenTheRequest(...) before expectTheResponseToBe(...).");
-    const response = await this.app.send(this.request);
+    const response = await this.app.fetch(this.request);
 
     expect(response.status).toBe(status);
     for (const [name, value] of Object.entries(headers)) expect(response.headers.get(name), `header ${name}`).toBe(value);

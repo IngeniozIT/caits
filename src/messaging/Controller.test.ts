@@ -1,14 +1,18 @@
 import { describe, expect, test, vi } from "vitest";
-import { Controller, InvalidInputError, MalformedBodyError, problem, readBody, type Dispatcher } from "./Controller.js";
+import { Controller, InvalidInputError, MalformedBodyError, problem, readBody } from "./Controller.js";
+import { Input } from "./Input.js";
+import type { MessageBus } from "./MessageBus.js";
 
-type Dto = { type: "double"; value: number };
+class Double extends Input<number> {
+  constructor(readonly value: number) { super(); }
+}
 
-class DoublingController extends Controller<Dto, number> {
-  protected async toDto(request: Request): Promise<Dto> {
+class DoublingController extends Controller<Double, number> {
+  protected async toDto(request: Request): Promise<Double> {
     const text = await request.clone().text();
     const value = Number(text);
     if (Number.isNaN(value)) throw new InvalidInputError("not a number", { text });
-    return { type: "double", value };
+    return new Double(value);
   }
 
   protected async toResponse(output: number, request: Request): Promise<Response> {
@@ -24,10 +28,10 @@ class DoublingController extends Controller<Dto, number> {
 
 const ask = (text: string) => new Request("http://localhost/", { method: "POST", body: text });
 
-function busDoing(execute: (dto: Dto) => Promise<number>) {
-  const received: Dto[] = [];
+function busDoing(execute: (dto: Double) => Promise<number>) {
+  const received: Double[] = [];
   const reported: unknown[] = [];
-  const bus: Dispatcher<Dto, number> = { execute: dto => { received.push(dto); return execute(dto); } };
+  const bus: MessageBus = { send: <Output>(dto: Input<Output>) => { received.push(dto as Double); return execute(dto as Double) as Promise<Output>; } };
   return { received, reported, controller: new DoublingController(bus, error => reported.push(error)) };
 }
 
@@ -37,7 +41,7 @@ describe("Controller", () => {
     const response = await controller.handle(ask("21"));
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("21 doubled is 42");
-    expect(received).toEqual([{ type: "double", value: 21 }]);
+    expect(received).toStrictEqual([new Double(21)]);
   });
 
   test("a request that cannot become a DTO is refused before the bus, and the controller says what that means", async () => {
@@ -65,15 +69,15 @@ describe("Controller", () => {
   });
 
   test("a body that is not JSON is a 400 problem, and a body that toDto refuses is a 422 problem with its issues", async () => {
-    class Reading extends Controller<Dto, number> {
-      protected async toDto(request: Request): Promise<Dto> {
+    class Reading extends Controller<Double, number> {
+      protected async toDto(request: Request): Promise<Double> {
         const body = await readBody(request);
         if (typeof body !== "number") throw new InvalidInputError("Invalid body", [{ message: "Expected a number" }]);
-        return { type: "double", value: body };
+        return new Double(body);
       }
       protected toResponse(output: number): Response { return new Response(String(output)); }
     }
-    const controller = new Reading({ execute: () => Promise.reject(new Error("never called")) });
+    const controller = new Reading({ send: () => Promise.reject(new Error("never called")) });
 
     const malformed = await controller.handle(ask("{not json"));
     expect(malformed.status).toBe(400);
@@ -90,11 +94,11 @@ describe("Controller", () => {
     const written: unknown[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((error: unknown) => { written.push(error); });
     try {
-      class Plain extends Controller<Dto, number> {
-        protected toDto(): Dto { return { type: "double", value: 1 }; }
+      class Plain extends Controller<Double, number> {
+        protected toDto(): Double { return new Double(1); }
         protected toResponse(output: number): Response { return new Response(String(output)); }
       }
-      expect((await new Plain({ execute: () => Promise.reject(new Error("disk full")) }).handle(ask("1"))).status).toBe(500);
+      expect((await new Plain({ send: () => Promise.reject(new Error("disk full")) }).handle(ask("1"))).status).toBe(500);
     } finally { spy.mockRestore(); }
     expect(written).toEqual([new Error("disk full")]);
   });
@@ -144,12 +148,12 @@ describe("Controller", () => {
   test("a failure while building the response is not mistaken for a failure of the application: it is reported and answered as an internal error", async () => {
     const asked: unknown[] = [];
     const reported: unknown[] = [];
-    class Clumsy extends Controller<Dto, number> {
-      protected toDto(): Dto { return { type: "double", value: 1 }; }
+    class Clumsy extends Controller<Double, number> {
+      protected toDto(): Double { return new Double(1); }
       protected toResponse(): Response { throw new RangeError("could not write the response"); }
       protected override toErrorResponse(error: unknown): Response { asked.push(error); return new Response("handled", { status: 400 }); }
     }
-    const response = await new Clumsy({ execute: () => Promise.resolve(2) }, error => reported.push(error)).handle(ask("1"));
+    const response = await new Clumsy({ send: () => Promise.resolve(2 as never) }, error => reported.push(error)).handle(ask("1"));
     expect(response.status).toBe(500);
     expect(asked).toEqual([]);
     expect(reported).toEqual([new RangeError("could not write the response")]);
@@ -157,12 +161,12 @@ describe("Controller", () => {
 
   test("a failure while explaining an error is reported and answered too: a controller never throws", async () => {
     const reported: unknown[] = [];
-    class Clumsy extends Controller<Dto, number> {
-      protected toDto(): Dto { return { type: "double", value: 1 }; }
+    class Clumsy extends Controller<Double, number> {
+      protected toDto(): Double { return new Double(1); }
       protected toResponse(): Response { return new Response(); }
       protected override toErrorResponse(): Response { throw new TypeError("could not explain"); }
     }
-    const response = await new Clumsy({ execute: () => Promise.reject(new Error("disk full")) }, error => reported.push(error)).handle(ask("1"));
+    const response = await new Clumsy({ send: () => Promise.reject(new Error("disk full")) }, error => reported.push(error)).handle(ask("1"));
     expect(response.status).toBe(500);
     expect(reported).toEqual([new TypeError("could not explain")]);
   });

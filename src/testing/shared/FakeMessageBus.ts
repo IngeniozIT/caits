@@ -1,3 +1,5 @@
+import type { MessageBus } from "../../messaging/MessageBus.js";
+
 type Outcome = { reply: unknown } | { error: Error };
 type Expectation = { message: object; outcome: Outcome | undefined; received: boolean };
 
@@ -10,7 +12,8 @@ function same(left: unknown, right: unknown): boolean {
   return keys.length === Object.keys(right).length && keys.every(key => Object.hasOwn(right, key) && same((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]));
 }
 
-export class FakeMessageBus {
+/** A message bus that only records: a test says which messages it expects, and what the application answers to each one. */
+export class FakeMessageBus implements MessageBus {
   private expectations: Expectation[] = [];
   private unexpected: object[] = [];
 
@@ -26,7 +29,7 @@ export class FakeMessageBus {
     this.last("fails").outcome = { error };
   }
 
-  execute(message: object): Promise<never> {
+  send(message: object): Promise<never> {
     const expected = this.expectations.find(candidate => !candidate.received && same(candidate.message, message));
     if (!expected) {
       this.unexpected.push(message);
