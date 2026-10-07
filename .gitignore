@@ -1,0 +1,6 @@
+# Dependencies
+node_modules/
+
+# Test, coverage and mutation output
+reports/
+.stryker-tmp/

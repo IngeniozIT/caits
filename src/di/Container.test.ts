@@ -22,7 +22,7 @@ class Radio {
 }
 class Truck extends Car {}
 type Limit = number;
-const Limit = 3;
+export const Limit = 3; // exported: only the code that the plugin writes after Gauge reads it
 class Gauge {
   constructor(readonly limit: Limit) {}
 }
