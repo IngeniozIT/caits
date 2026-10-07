@@ -7,8 +7,9 @@ export type Parse = (filename: string, code: string) => { program: ESTree.Progra
  * The code that a module needs after its own, for the containers:
  * - after each class that has a constructor, the dependencies of the constructor (DEPENDENCIES in Container.ts): the name of each
  *   parameter, if it is optional, and the token of its type when the type has a value of the same name, declared in the module or
- *   imported from a relative path or from one of the packages given (a port and its token, or a class: the kernel gives EventPublisher,
- *   DataDirectory…). The token is read only when the container needs it, thus a cycle between modules does no harm;
+ *   imported from a relative path, from a shortcut of the project (#…, which a package.json or a tsconfig.json maps to a folder) or from
+ *   one of the packages given (a port and its token, or a class: the kernel gives EventPublisher, DataDirectory…). The token is read only
+ *   when the container needs it, thus a cycle between modules does no harm;
  * - the name of each token declared without one: the name of its constant.
  * The names are text: the minifier can rename the code.
  */
@@ -22,7 +23,7 @@ export function declareDependencies(code: string, filename: string, parse: Parse
   for (const statement of program.body) {
     if (statement.type === "ImportDeclaration") {
       const source = statement.source.value;
-      if (!source.startsWith(".") && !packages.some(name => source === name || source.startsWith(`${name}/`))) continue;
+      if (!source.startsWith(".") && !source.startsWith("#") && !packages.some(name => source === name || source.startsWith(`${name}/`))) continue;
       for (const specifier of statement.specifiers) {
         if (specifier.type === "ImportSpecifier") imported.set(specifier.local.name, { source, name: nameOf(specifier.imported) });
         if (specifier.type === "ImportDefaultSpecifier") imported.set(specifier.local.name, { source, name: "default" });

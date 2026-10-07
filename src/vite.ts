@@ -71,8 +71,14 @@ function contexts(source: string): Plugin {
   };
   return {
     name: "kernel-contexts",
-    // Vite processes the package as the code of the project, also when it is installed: it holds TypeScript and imports these modules.
-    config: () => ({ ssr: { noExternal: [KERNEL] }, optimizeDeps: { exclude: [KERNEL] } }),
+    config: () => ({
+      // Vite processes the package as the code of the project, also when it is installed: it holds TypeScript and imports these modules.
+      ssr: { noExternal: [KERNEL] },
+      optimizeDeps: { exclude: [KERNEL] },
+      // The shortcut #shared leads to the backend context shared from every file (the tsconfig.json of the project says it to TypeScript).
+      // Vite reads an alias before the "imports" of the package.json of a context (#context), which cannot lead out of the context.
+      resolve: { alias: [{ find: /^#shared\//, replacement: `${source}/backend/shared/` }] }
+    }),
     resolveId: id => Object.hasOwn(modules, id) ? `\0${id}` : undefined,
     load: id => id.startsWith("\0") && Object.hasOwn(modules, id.slice(1)) ? modules[id.slice(1)] : undefined
   };

@@ -19,6 +19,19 @@ export class Handler {
     ]);
   });
 
+  test("writes the token of a type imported from a shortcut of the project (#…): a package.json or a tsconfig.json gives its path", () => {
+    const code = `import type { Clock } from "#ports/Clock.js";
+import { Store } from "#app/Store.js";
+export class Handler {
+  constructor(clock: Clock, store: Store) {}
+}`;
+    expect(written(code)).toEqual([
+      'import * as __dependencies_0 from "#ports/Clock.js";',
+      'import * as __dependencies_1 from "#app/Store.js";',
+      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "clock", token: () => __dependencies_0["Clock"] }, { name: "store", token: () => __dependencies_1["Store"] }];'
+    ]);
+  });
+
   test("imports a module once, and reads the name a type has in its module", () => {
     expect(written(`import { type Clock as Time, Store } from "./ports.js";
 import Default from "./Default.js";
