@@ -57,7 +57,7 @@ npm install --save-dev vite vitest typescript@6 @types/node @marko/type-check ha
 
 The tag after `#` is the version of CAITS. `npm update` does not change this version. To get another version, install CAITS again with the new tag.
 
-If the repository is private, npm uses your SSH key. Write the address in full: `git+ssh://git@github.com/IngeniozIT/caits.git#v0.1.0`.
+The repository is private: npm gets it with git over SSH. Your SSH key must give access to it. If the key has a passphrase, add the key to your SSH agent first (`ssh-add`).
 
 ## 3. Configure Vite
 
