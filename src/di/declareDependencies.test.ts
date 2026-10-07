@@ -15,7 +15,7 @@ export class Handler {
     expect(written(code)).toEqual([
       'import * as __dependencies_0 from "./Clock.js";',
       'import * as __dependencies_1 from "../Store.js";',
-      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "clock", token: () => __dependencies_0["Clock"] }, { name: "store", token: () => __dependencies_1["Store"] }];'
+      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "clock", type: "Clock", token: () => __dependencies_0["Clock"] }, { name: "store", type: "Store", token: () => __dependencies_1["Store"] }];'
     ]);
   });
 
@@ -28,7 +28,7 @@ export class Handler {
     expect(written(code)).toEqual([
       'import * as __dependencies_0 from "#ports/Clock.js";',
       'import * as __dependencies_1 from "#app/Store.js";',
-      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "clock", token: () => __dependencies_0["Clock"] }, { name: "store", token: () => __dependencies_1["Store"] }];'
+      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "clock", type: "Clock", token: () => __dependencies_0["Clock"] }, { name: "store", type: "Store", token: () => __dependencies_1["Store"] }];'
     ]);
   });
 
@@ -40,8 +40,8 @@ class Handler { constructor(time: Time, store: Store, value: Default, odd: Odd) 
       'import * as __dependencies_0 from "./ports.js";',
       'import * as __dependencies_1 from "./Default.js";',
       'import * as __dependencies_2 from "./odd.js";',
-      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "time", token: () => __dependencies_0["Clock"] }, { name: "store", token: () => __dependencies_0["Store"] }, ' +
-      '{ name: "value", token: () => __dependencies_1["default"] }, { name: "odd", token: () => __dependencies_2["odd name"] }];'
+      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "time", type: "Time", token: () => __dependencies_0["Clock"] }, { name: "store", type: "Store", token: () => __dependencies_0["Store"] }, ' +
+      '{ name: "value", type: "Default", token: () => __dependencies_1["default"] }, { name: "odd", type: "Odd", token: () => __dependencies_2["odd name"] }];'
     ]);
   });
 
@@ -54,7 +54,7 @@ class Handler { constructor(events: EventPublisher, fetch: Fetcher, schema: Sche
     expect(declareDependencies(code, "module.ts", parseSync, ["@kernel"])?.split("\n")).toEqual([
       'import * as __dependencies_0 from "@kernel/messaging/EventPublisher";',
       'import * as __dependencies_1 from "@kernel";',
-      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "events", token: () => __dependencies_0["EventPublisher"] }, { name: "fetch", token: () => __dependencies_1["Fetcher"] }, ' +
+      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "events", type: "EventPublisher", token: () => __dependencies_0["EventPublisher"] }, { name: "fetch", type: "Fetcher", token: () => __dependencies_1["Fetcher"] }, ' +
       '{ name: "schema" }, { name: "other" }];'
     ]);
   });
@@ -67,8 +67,8 @@ function Factory() {}
 enum Mode { On }
 export class Handler { constructor(port: Port, other: Other, hidden: Hidden, factory: Factory, mode: Mode, engine: Engine) {} }
 class Engine {}`)).toEqual([
-      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "port", token: () => Port }, { name: "other", token: () => Other }, { name: "hidden" }, ' +
-      '{ name: "factory", token: () => Factory }, { name: "mode", token: () => Mode }, { name: "engine", token: () => Engine }];'
+      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "port", type: "Port", token: () => Port }, { name: "other", type: "Other", token: () => Other }, { name: "hidden" }, ' +
+      '{ name: "factory", type: "Factory", token: () => Factory }, { name: "mode", type: "Mode", token: () => Mode }, { name: "engine", type: "Engine", token: () => Engine }];'
     ]);
   });
 
@@ -85,7 +85,7 @@ class Handler { constructor(local: Local, schema: Schema, port: ports.Port, text
     expect(written(`import type { Clock } from "./Clock.js";
 class Handler { constructor(private clock: Clock = system, readonly limit = 3, label?: string, { a }: Options, ...rest: Clock[]) {} }`)).toEqual([
       'import * as __dependencies_0 from "./Clock.js";',
-      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "clock", token: () => __dependencies_0["Clock"], optional: true }, { name: "limit", optional: true }, ' +
+      'Handler[Symbol.for("kernel.dependencies")] = [{ name: "clock", type: "Clock", token: () => __dependencies_0["Clock"], optional: true }, { name: "limit", optional: true }, ' +
       '{ name: "label", optional: true }, { name: "#3" }, { name: "#4" }];'
     ]);
   });

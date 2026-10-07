@@ -3,8 +3,11 @@ import { Token } from "../Token.js";
 /** What the build writes next to each class: the parameters of its constructor, in order. */
 export const DEPENDENCIES = Symbol.for("kernel.dependencies");
 
-/** A parameter of a constructor: its name, and the token of its type when the type has one (a port and its token, or a class). */
-export type Dependency = { readonly name: string; readonly token?: () => unknown; readonly optional?: true };
+/**
+ * A parameter of a constructor: its name, and the token of its type when the type has one (a port and its token, or a class). The name
+ * of the type goes with its token: if the module of the type declares no token, the error names the type.
+ */
+export type Dependency = { readonly name: string; readonly type?: string; readonly token?: () => unknown; readonly optional?: true };
 
 export type Concrete<T = unknown> = new (...args: never[]) => T;
 export type Key<T = unknown> = Token<T> | (abstract new (...args: never[]) => T);
@@ -104,13 +107,16 @@ export class Container {
     for (const name of Object.keys(values)) {
       if (!dependencies?.some(dependency => dependency.name === name)) throw new Error(`${type.name} has no parameter named ${name}`);
     }
-    const args = (dependencies ?? []).map(({ name, token, optional }) => {
+    const args = (dependencies ?? []).map(({ name, type: typeName, token, optional }) => {
       if (Object.hasOwn(values, name)) return values[name];
       const key = token?.();
       // An optional parameter keeps its default value when its type has no token, or when nothing is bound to its token.
       if (optional && (!isKey(key) || (key instanceof Token && !this.has(key)))) return undefined;
       if (isKey(key)) return this.resolve(key, path, make);
-      throw new Error(`${describe(path)} needs a value for its parameter ${name}: give it with bind(${type.name}).with({ ${name}: … })`);
+      const bound = path[path.length - 1];
+      const binding = bound === type ? `bind(${type.name})` : `bind(${bound.name}).to(${type.name})`;
+      const noToken = typeName ? `its type ${typeName} has no token (export const ${typeName} = new Token<${typeName}>()), or ` : "";
+      throw new Error(`${describe(path)} needs a value for its parameter ${name}: ${noToken}give it with ${binding}.with({ ${name}: … })`);
     });
     return make ? new type(...(args as never[])) : undefined;
   }

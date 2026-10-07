@@ -7,8 +7,8 @@ import type { Fetcher } from "../../di/Fetcher.js";
 import type { Input } from "../../messaging/Input.js";
 import type { Token } from "../../Token.js";
 
-/** The test.di.ts of each context: the bindings that replace, in tests, those that reach outside the browser. */
-const testBindings: Record<string, readonly Binding[]> = Object.fromEntries(
+/** The test.di.ts of each context that has one: the bindings that replace, in tests, those that reach outside the browser. */
+const testBindings: Record<string, readonly Binding[] | undefined> = Object.fromEntries(
   Object.entries(testDi)
     .map(([path, bindings]) => [/frontend\/([^/]+)\//.exec(path)![1], bindings])
 );
@@ -43,7 +43,7 @@ export function createTestApplication() {
 
   /** The contexts that bind this token. */
   const holders = (token: Token<unknown>): string[] => {
-    const found = Object.keys(discoveredFrontends).filter(name => [...discoveredFrontends[name].bindings, ...testBindings[name]].some(binding => binding.key === token));
+    const found = Object.keys(discoveredFrontends).filter(name => [...discoveredFrontends[name].bindings, ...testBindings[name] ?? []].some(binding => binding.key === token));
     if (found.length === 0) throw new Error(`No context binds ${token.name}`);
     return found;
   };

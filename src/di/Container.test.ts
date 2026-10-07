@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { Token } from "../Token.js";
-import { bind, Container } from "./Container.js";
+import { bind, Container, type Binding } from "./Container.js";
 
 interface Clock { now(): string }
 const Clock = new Token<Clock>();
@@ -33,6 +33,15 @@ class Egg {
   constructor(readonly chicken: Chicken) {}
 }
 const hidden = () => class Hidden { constructor(readonly name: string) {} };
+interface Shelf { put(item: string): void }
+const Shelf = new Token<Shelf>();
+class FileShelf implements Shelf {
+  constructor(readonly fileName: string) {}
+  put(): void {}
+}
+class Recorder {
+  constructor(readonly binding: Binding) {}
+}
 class Counted {
   static made = 0;
   constructor() { Counted.made++; }
@@ -171,8 +180,17 @@ describe("a container", () => {
 
     test("a parameter whose type has no token, and how to give its value", () => {
       expect(() => new Container([bind(Clock).to(FixedClock)]).get(Greeter)).toThrow("Greeter needs a value for its parameter greeting: give it with bind(Greeter).with({ greeting: … })");
-      expect(() => new Container().get(Gauge)).toThrow("Gauge needs a value for its parameter limit: give it with bind(Gauge).with({ limit: … })");
+      expect(() => new Container().get(Gauge)).toThrow("Gauge needs a value for its parameter limit: its type Limit has no token (export const Limit = new Token<Limit>()), or give it with bind(Gauge).with({ limit: … })");
       expect(new Container([bind(Gauge).with({ limit: 5 })]).get(Gauge).limit).toBe(5);
+    });
+
+    test("a parameter of the class bound to a port: its value goes after the binding of the port", () => {
+      expect(() => new Container([bind(Shelf).to(FileShelf)]).get(Shelf)).toThrow("Shelf needs a value for its parameter fileName: give it with bind(Shelf).to(FileShelf).with({ fileName: … })");
+      expect(new Container([bind(Shelf).to(FileShelf).with({ fileName: "shelf.json" })]).get(Shelf)).toEqual(new FileShelf("shelf.json"));
+    });
+
+    test("a type whose module declares no token, as a port without its token: the error names the type", () => {
+      expect(() => new Container().get(Recorder)).toThrow("Recorder needs a value for its parameter binding: its type Binding has no token (export const Binding = new Token<Binding>()), or give it with bind(Recorder).with({ binding: … })");
     });
 
     test("a value for a parameter that the class does not have", () => {
