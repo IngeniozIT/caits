@@ -64,6 +64,28 @@ describe("Controller", () => {
     expect(reported).toEqual([new Error("disk full")]);
   });
 
+  test("a body that is not JSON is a 400 problem, and a body that toDto refuses is a 422 problem with its issues", async () => {
+    class Reading extends Controller<Dto, number> {
+      protected async toDto(request: Request): Promise<Dto> {
+        const body = await readBody(request);
+        if (typeof body !== "number") throw new InvalidInputError("Invalid body", [{ message: "Expected a number" }]);
+        return { type: "double", value: body };
+      }
+      protected toResponse(output: number): Response { return new Response(String(output)); }
+    }
+    const controller = new Reading({ execute: () => Promise.reject(new Error("never called")) });
+
+    const malformed = await controller.handle(ask("{not json"));
+    expect(malformed.status).toBe(400);
+    expect(malformed.headers.get("content-type")).toBe("application/problem+json");
+    expect(await malformed.json()).toEqual({ type: "urn:spike:problem:invalid-request-body", title: "Invalid request body", status: 400, detail: "Invalid JSON" });
+
+    const refused = await controller.handle(ask('"abc"'));
+    expect(refused.status).toBe(422);
+    expect(refused.headers.get("content-type")).toBe("application/problem+json");
+    expect(await refused.json()).toEqual({ type: "urn:spike:problem:invalid-request-body", title: "Invalid request body", status: 422, detail: "Invalid body", issues: [{ message: "Expected a number" }] });
+  });
+
   test("an error is reported to the console unless the controller is told where", async () => {
     const written: unknown[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((error: unknown) => { written.push(error); });

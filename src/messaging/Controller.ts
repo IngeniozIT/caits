@@ -40,7 +40,13 @@ export abstract class Controller<Dto, Output> {
 
   protected abstract toResponse(output: Output, request: Request): Response | Promise<Response>;
 
+  /**
+   * The response to an error of the request or of the application. A body that is not JSON is a 400, a body that toDto refuses is a 422
+   * with its issues, and any other error is an internal server error. A controller answers its own errors first, then calls super.
+   */
   protected toErrorResponse(error: unknown, _request: Request): Response | Promise<Response> {
+    if (error instanceof MalformedBodyError) return problem(400, "invalid-request-body", "Invalid request body", error.message);
+    if (error instanceof InvalidInputError) return problem(422, "invalid-request-body", "Invalid request body", error.message, { issues: error.details });
     return this.internalServerError(error);
   }
 
