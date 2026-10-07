@@ -6,7 +6,7 @@ import { kernel } from "./src/vite.js";
 // as an app does: the name leads to the files of this folder, also in a copy of it (the sandbox of the mutation tests).
 export default defineConfig({
   plugins: [kernel({ source: "test/project" })],
-  resolve: { alias: [{ find: /^@ingeniozits\/kernel\//, replacement: fileURLToPath(new URL("./src/", import.meta.url)) }] },
+  resolve: { alias: [{ find: /^@ingeniozit\/caits\//, replacement: fileURLToPath(new URL("./src/", import.meta.url)) }] },
   test: {
     include: ["src/**/*.test.ts"],
     coverage: {

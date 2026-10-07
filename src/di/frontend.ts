@@ -4,7 +4,7 @@ import type { Fetcher } from "./Fetcher.js";
 
 /**
  * The frontends of the contexts, by name. Each context adds its own, next to its type:
- * `declare module "@ingeniozits/kernel/di/frontend" { interface Frontends { counter: CounterFrontend } }`.
+ * `declare module "@ingeniozit/caits/di/frontend" { interface Frontends { counter: CounterFrontend } }`.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- the contexts fill it
 export interface Frontends {}

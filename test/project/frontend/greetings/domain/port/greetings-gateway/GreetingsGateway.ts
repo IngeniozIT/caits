@@ -1,4 +1,4 @@
-import { Token } from "@ingeniozits/kernel/Token";
+import { Token } from "@ingeniozit/caits/Token";
 
 export interface GreetingsGateway {
   list(): Promise<string[]>;

@@ -1,4 +1,4 @@
-import type { EventPublisher } from "@ingeniozits/kernel/messaging/EventPublisher";
+import type { EventPublisher } from "@ingeniozit/caits/messaging/EventPublisher";
 import type { GreetingsGateway } from "../../../domain/port/greetings-gateway/GreetingsGateway.js";
 import { GreetingsLoaded } from "../../event/GreetingsLoaded.js";
 import type { GreetingsEvent } from "../../event/GreetingsEvent.js";

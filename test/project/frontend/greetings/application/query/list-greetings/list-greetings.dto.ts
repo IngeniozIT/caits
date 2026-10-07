@@ -1,3 +1,3 @@
-import { Input } from "@ingeniozits/kernel/messaging/Input";
+import { Input } from "@ingeniozit/caits/messaging/Input";
 
 export class ListGreetingsQuery extends Input<void> {}

@@ -10,7 +10,7 @@
     "noEmit": true,
     "noImplicitOverride": true,
     "noUnusedLocals": true,
-    "paths": { "@ingeniozits/kernel/*": ["./src/*"] },
+    "paths": { "@ingeniozit/caits/*": ["./src/*"] },
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,

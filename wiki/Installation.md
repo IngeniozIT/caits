@@ -1,15 +1,15 @@
 # Installation
 
-This page tells how to add the kernel to a new project. At the end, the project builds, passes its type check and starts.
+This page tells how to add CAITS to a new project. At the end, the project builds, passes its type check and starts.
 
 ## What you need
 
 | Tool | Version |
 |---|---|
 | Node.js | 22.12 or later, in version 22, 24, or 26 and later. Vitest does not support versions 23 and 25. |
-| git | Any version. npm uses git to get the kernel from GitHub. |
+| git | Any version. npm uses git to get CAITS from GitHub. |
 
-You must also have read access to the GitHub repository of the kernel.
+You must also have read access to the GitHub repository `IngeniozIT/caits`.
 
 ## 1. Make the project
 
@@ -34,30 +34,30 @@ Make a folder for the project. In this folder, write `package.json`:
 }
 ```
 
-- `"type": "module"`: the kernel and the configuration files are ES modules.
+- `"type": "module"`: CAITS and the configuration files are ES modules.
 - `imports`: the routes import the files of the contexts with the shortcuts `#backend/…` and `#frontend/…`.
 - `typecheck` builds the app first: the build writes the types of the routes.
 
 ## 2. Install the packages
 
 ```sh
-npm install github:OWNER/REPOSITORY#v0.1.0 marko @marko/run
+npm install github:IngeniozIT/caits#v0.1.0 marko @marko/run
 npm install --save-dev vite vitest typescript@6 @types/node @marko/type-check happy-dom
 ```
 
 | Package | Why |
 |---|---|
-| `@ingeniozits/kernel` | The kernel. |
+| `@ingeniozit/caits` | CAITS. |
 | `marko`, `@marko/run` | The pages and the routes. |
-| `vite` | Builds the app. The kernel has a Vite plugin. |
-| `vitest` | Runs the tests. The test helpers of the kernel use it. |
+| `vite` | Builds the app. CAITS has a Vite plugin. |
+| `vitest` | Runs the tests. The test helpers of CAITS use it. |
 | `typescript@6`, `@marko/type-check` | Check the types of the `.ts` and `.marko` files. `@marko/type-check` uses TypeScript 6: install the same version. |
 | `@types/node` | The types of Node.js, for example `process.env`. |
 | `happy-dom` | A browser for the tests of the Views. |
 
-The tag after `#` is the version of the kernel. `npm update` does not change this version. To get another version, install the kernel again with the new tag.
+The tag after `#` is the version of CAITS. `npm update` does not change this version. To get another version, install CAITS again with the new tag.
 
-If the repository is private, npm uses your SSH key. Write the address in full: `git+ssh://git@github.com/OWNER/REPOSITORY.git#v0.1.0`.
+If the repository is private, npm uses your SSH key. Write the address in full: `git+ssh://git@github.com/IngeniozIT/caits.git#v0.1.0`.
 
 ## 3. Configure Vite
 
@@ -65,7 +65,7 @@ Write `vite.config.ts`:
 
 ```ts
 import marko from "@marko/run/vite";
-import { kernel } from "@ingeniozits/kernel/vite";
+import { kernel } from "@ingeniozit/caits/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -73,7 +73,7 @@ export default defineConfig({
 });
 ```
 
-The plugin of the kernel does two things:
+The plugin of CAITS does two things:
 
 - It writes the parameters of each constructor next to the class. The container reads them to give each class its dependencies. Thus the build can make the code smaller and change the names in it.
 - It finds the contexts in `src/backend/` and `src/frontend/`. If your code is not in `src/`, give its folder: `kernel({ source: "app" })`.
@@ -101,16 +101,16 @@ Write `tsconfig.json`:
 }
 ```
 
-The kernel needs these options:
+CAITS needs these options:
 
 | Option | Why |
 |---|---|
-| `"moduleResolution": "bundler"` | The kernel gives its TypeScript files. TypeScript must find them as Vite does. |
+| `"moduleResolution": "bundler"` | CAITS gives its TypeScript files. TypeScript must find them as Vite does. |
 | `"types": ["node"]` | TypeScript 6 adds no types by itself. This line adds the types of Node.js. |
-| `"paths"` | The shortcut `#shared/…` leads to the context `shared` of the backend. The plugin of the kernel gives the same shortcut to Vite. |
+| `"paths"` | The shortcut `#shared/…` leads to the context `shared` of the backend. The plugin of CAITS gives the same shortcut to Vite. |
 | `.marko-run/routes.d.ts` in `include` | The types of the routes. `marko-run build` writes this file. |
 
-TypeScript also checks the files of the kernel with these options.
+TypeScript also checks the files of CAITS with these options.
 
 ## 5. Make the folders
 
