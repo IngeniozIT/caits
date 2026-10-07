@@ -1,0 +1,40 @@
+{
+  "name": "@ingeniozits/kernel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:mutation": "stryker run stryker.config.json",
+    "check": "npm run typecheck && npm run test:coverage"
+  },
+  "dependencies": {
+    "magic-string": "^0.30.21"
+  },
+  "peerDependencies": {
+    "@marko/run": ">=0.11",
+    "vite": ">=8",
+    "vitest": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "@marko/run": {
+      "optional": true
+    },
+    "vitest": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/typescript-checker": "^10.0.0",
+    "@types/node": "^26.6.4",
+    "@vitest/coverage-v8": "^5.0.3",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}

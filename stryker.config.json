@@ -1,0 +1,44 @@
+{
+  "$schema": "../../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "command",
+  "checkers": [
+    "typescript"
+  ],
+  "tsconfigFile": "tsconfig.json",
+  "mutate": [
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "!src/**/*.d.ts",
+    "!src/testing/**",
+    "!src/vite.ts",
+    "!src/di/discovered.ts",
+    "!src/di/discoveredFrontends.ts"
+  ],
+  "reporters": [
+    "progress",
+    "json",
+    "html"
+  ],
+  "htmlReporter": {
+    "fileName": "reports/mutation/index.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "thresholds": {
+    "high": 100,
+    "low": 100,
+    "break": 100
+  },
+  "concurrency": "100%",
+  "timeoutMS": 15000,
+  "coverageAnalysis": "off",
+  "commandRunner": {
+    "command": "npx vitest run --reporter=dot --bail=1"
+  },
+  "ignorePatterns": [
+    "reports"
+  ]
+}

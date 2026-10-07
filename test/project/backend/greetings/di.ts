@@ -1,0 +1,7 @@
+import { bind } from "@ingeniozits/kernel/di/Container";
+import { Greeter } from "./domain/port/greeter/Greeter.js";
+import { PoliteGreeter } from "./infra/greeter/polite-greeter.js";
+
+export default [
+  bind(Greeter).to(PoliteGreeter).with({ salutation: "Hello" })
+];
