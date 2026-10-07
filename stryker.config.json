@@ -1,5 +1,5 @@
 {
-  "$schema": "../../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "command",
   "checkers": [
     "typescript"
@@ -7,10 +7,11 @@
   "tsconfigFile": "tsconfig.json",
   "mutate": [
     "src/**/*.ts",
+    "src/**/*.js",
     "!src/**/*.test.ts",
     "!src/**/*.d.ts",
     "!src/testing/**",
-    "!src/vite.ts",
+    "!src/vite.js",
     "!src/di/discovered.ts",
     "!src/di/discoveredFrontends.ts"
   ],

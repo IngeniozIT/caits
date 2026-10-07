@@ -1,8 +1,9 @@
 {
-  "include": ["src/**/*", "test/**/*", "vitest.config.ts"],
+  "include": ["src/**/*", "test/**/*", "vitest.config.ts", "eslint.config.js"],
   "compilerOptions": {
-    "allowImportingTsExtensions": true,
+    "allowJs": true,
     "allowSyntheticDefaultImports": true,
+    "checkJs": true,
     "lib": ["DOM", "ESNext"],
     "module": "ESNext",
     "moduleResolution": "bundler",

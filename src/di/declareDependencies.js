@@ -1,7 +1,12 @@
-import type { ESTree } from "vite";
+// JavaScript, not TypeScript: the Vite plugin (vite.js) imports this file, and Node loads the plugin itself. Node strips no types in
+// node_modules, where a project installs the kernel. TypeScript checks the types of the comments.
 
-/** Reads a module of TypeScript as a program: the parser of Vite (oxc) in the build, and in the tests. */
-export type Parse = (filename: string, code: string) => { program: ESTree.Program };
+/** @import { ESTree } from "vite" */
+
+/**
+ * Reads a module of TypeScript as a program: the parser of Vite (oxc) in the build, and in the tests.
+ * @typedef {(filename: string, code: string) => { program: ESTree.Program }} Parse
+ */
 
 /**
  * The code that a module needs after its own, for the containers:
@@ -12,13 +17,22 @@ export type Parse = (filename: string, code: string) => { program: ESTree.Progra
  *   when the container needs it, thus a cycle between modules does no harm. The name of the type goes with its token, for the errors;
  * - the name of each token declared without one: the name of its constant.
  * The names are text: the minifier can rename the code.
+ * @param {string} code
+ * @param {string} filename
+ * @param {Parse} parse
+ * @param {readonly string[]} packages
+ * @returns {string | undefined}
  */
-export function declareDependencies(code: string, filename: string, parse: Parse, packages: readonly string[]): string | undefined {
+export function declareDependencies(code, filename, parse, packages) {
   const { program } = parse(filename, code);
-  const imported = new Map<string, { source: string; name: string }>();
-  const values = new Set<string>();
-  const classes: { name: string; parameters: readonly ESTree.ParamPattern[] }[] = [];
-  const tokens: string[] = [];
+  /** @type {Map<string, { source: string; name: string }>} */
+  const imported = new Map();
+  /** @type {Set<string>} */
+  const values = new Set();
+  /** @type {{ name: string; parameters: readonly ESTree.ParamPattern[] }[]} */
+  const classes = [];
+  /** @type {string[]} */
+  const tokens = [];
 
   for (const statement of program.body) {
     if (statement.type === "ImportDeclaration") {
@@ -47,8 +61,10 @@ export function declareDependencies(code: string, filename: string, parse: Parse
   }
   if (classes.length === 0 && tokens.length === 0) return undefined;
 
-  const namespaces = new Map<string, string>();
-  const tokenOf = (type: ESTree.TSType | undefined): { type: string; token: string } | undefined => {
+  /** @type {Map<string, string>} */
+  const namespaces = new Map();
+  /** @type {(type: ESTree.TSType | undefined) => { type: string; token: string } | undefined} */
+  const tokenOf = type => {
     if (type?.type !== "TSTypeReference" || type.typeName.type !== "Identifier") return undefined;
     const name = type.typeName.name;
     if (values.has(name)) return { type: name, token: name };
@@ -57,7 +73,8 @@ export function declareDependencies(code: string, filename: string, parse: Parse
     if (!namespaces.has(from.source)) namespaces.set(from.source, `__dependencies_${namespaces.size}`);
     return { type: name, token: `${namespaces.get(from.source)}[${JSON.stringify(from.name)}]` };
   };
-  const dependencyOf = (parameter: ESTree.ParamPattern, index: number): string => {
+  /** @type {(parameter: ESTree.ParamPattern, index: number) => string} */
+  const dependencyOf = (parameter, index) => {
     const inner = parameter.type === "TSParameterProperty" ? parameter.parameter : parameter;
     const pattern = inner.type === "AssignmentPattern" ? inner.left : inner;
     const name = pattern.type === "Identifier" ? pattern.name : `#${index}`;
@@ -72,4 +89,5 @@ export function declareDependencies(code: string, filename: string, parse: Parse
   return [...imports, ...declarations, ...names].join("\n");
 }
 
-const nameOf = (name: ESTree.ModuleExportName): string => name.type === "Literal" ? name.value : name.name;
+/** @type {(name: ESTree.ModuleExportName) => string} */
+const nameOf = name => name.type === "Literal" ? name.value : name.name;

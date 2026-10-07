@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./vite": {
+      "types": "./src/vite.types.d.ts",
+      "default": "./src/vite.js"
+    },
     "./*": "./src/*.ts"
   },
   "scripts": {
