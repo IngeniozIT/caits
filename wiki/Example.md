@@ -1,6 +1,6 @@
 # Example
 
-`npx github:IngeniozIT/caits#v0.3.0 init my-app --example` makes a small app that shows how to write each layer and each kind of test. Read it, then change it or remove it.
+`npx github:IngeniozIT/caits#v0.4.0 init my-app --example` makes a small app that shows how to write each layer and each kind of test. Read it, then change it or remove it.
 
 The app is in the repository [IngeniozIT/caits-example](https://github.com/IngeniozIT/caits-example), not in the package of CAITS: `init` gets it with git, at the tag of its version.
 

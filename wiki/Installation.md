@@ -14,7 +14,7 @@ You must also have read access to the GitHub repository `IngeniozIT/caits`, and 
 ## Make a new project
 
 ```sh
-npx github:IngeniozIT/caits#v0.3.0 init my-app
+npx github:IngeniozIT/caits#v0.4.0 init my-app
 cd my-app
 npm run check
 ```
@@ -35,7 +35,7 @@ To start from a small app that shows each layer and each kind of test, add `--ex
 In the folder of the project:
 
 ```sh
-npx github:IngeniozIT/caits#v0.3.0 init
+npx github:IngeniozIT/caits#v0.4.0 init
 ```
 
 - The command writes only the files that the project does not have. It does not change the other files.
@@ -124,4 +124,4 @@ The scripts are yours: you can change them. Some scripts run a command of CAITS:
 | `--example` | The command writes a small app in place of the first page: a home page, a menu, and a page where the user adds, edits and removes messages. It also adds the packages of the app (its fonts). The app is not in the package of CAITS: git gets it from the repository `IngeniozIT/caits-example`, at the tag of the version of CAITS. See [Example](Example.md). |
 | `--example-source <source>` | The command writes the example of this source: a git repository, with `#` and a tag or a branch (for example `git@github.com:IngeniozIT/caits-example.git#main`), or a folder. |
 | `--no-install` | The command writes the files, but installs nothing. Then run `npm install` and `npx playwright install chromium` yourself. |
-| `--caits <source>` | npm gets CAITS from this source, for example `git+file:///path/to/caits#v0.3.0`. By default, the source is the tag of the version of the command on GitHub. |
+| `--caits <source>` | npm gets CAITS from this source, for example `git+file:///path/to/caits#v0.4.0`. By default, the source is the tag of the version of the command on GitHub. |
