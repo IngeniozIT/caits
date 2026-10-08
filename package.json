@@ -1,19 +1,28 @@
 {
   "name": "@ingeniozit/caits",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CAITS (Clean Architecture In TypeScript): the technical base of a Marko project with a backend and a frontend.",
   "repository": "github:IngeniozIT/caits",
   "private": true,
   "type": "module",
+  "bin": {
+    "caits": "bin/caits.js"
+  },
   "exports": {
     "./vite": {
       "types": "./src/vite.types.d.ts",
       "default": "./src/vite.js"
     },
+    "./quality/*": "./quality/*.mjs",
     "./*": "./src/*.ts"
   },
   "files": [
+    "bin",
+    "quality",
     "src",
+    "template",
+    "!bin/**/*.test.ts",
+    "!quality/**/*.test.mjs",
     "!src/**/*.test.ts"
   ],
   "engines": {
@@ -26,6 +35,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:mutation": "stryker run stryker.config.json",
+    "test:template": "node test/template.js",
     "check": "npm run typecheck && npm run lint && npm run test:coverage"
   },
   "dependencies": {
@@ -40,18 +50,25 @@
     "@marko/run": {
       "optional": true
     },
+    "vite": {
+      "optional": true
+    },
     "vitest": {
       "optional": true
     }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@marko/compiler": "^5.42.10",
     "@marko/run": "^0.11.13",
+    "@marko/type-check": "^3.2.1",
+    "@playwright/test": "^1.64.0",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/typescript-checker": "^10.0.0",
     "@types/node": "^26.6.4",
     "@vitest/coverage-v8": "^5.0.3",
     "eslint": "^10.11.0",
+    "happy-dom": "^20.14.5",
     "marko": "^6.4.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.0",

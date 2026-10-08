@@ -1,0 +1,4 @@
+{
+  // The TypeScript configuration of this project: that of CAITS (quality/caits/tsconfig.json), with the changes of this project.
+  "extends": "./quality/caits/tsconfig.json"
+}

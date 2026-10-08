@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.marko-run/
+tsconfig.tsbuildinfo
+
+# Runtime data (file persistence adapter)
+.data/
+
+# Test, coverage and mutation output
+reports/
+test-results/
+.stryker-tmp/
+playwright-report/

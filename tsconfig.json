@@ -1,5 +1,5 @@
 {
-  "include": ["src/**/*", "test/**/*", "vitest.config.ts", "eslint.config.js"],
+  "include": ["bin/**/*", "src/**/*", "test/**/*", "vitest.config.ts", "eslint.config.js"],
   "compilerOptions": {
     "allowJs": true,
     "allowSyntheticDefaultImports": true,

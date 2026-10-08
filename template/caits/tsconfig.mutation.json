@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["../../src/**/*.ts", "../../test/**/*.ts", "./marko-modules.d.ts"],
+  "exclude": ["../../src/routes/**/+*.ts", "../../test/e2e/**"]
+}

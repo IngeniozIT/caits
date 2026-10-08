@@ -6,9 +6,15 @@ import { kernel } from "./src/vite.js";
 // as an app does: the name leads to the files of this folder, also in a copy of it (the sandbox of the mutation tests).
 export default defineConfig({
   plugins: [kernel({ source: "test/project" })],
-  resolve: { alias: [{ find: /^@ingeniozit\/caits\//, replacement: fileURLToPath(new URL("./src/", import.meta.url)) }] },
+  resolve: {
+    alias: [
+      { find: /^@ingeniozit\/caits\/quality\//, replacement: fileURLToPath(new URL("./quality/", import.meta.url)) },
+      { find: /^@ingeniozit\/caits\//, replacement: fileURLToPath(new URL("./src/", import.meta.url)) }
+    ]
+  },
   test: {
-    include: ["src/**/*.test.ts"],
+    // The tests of the architecture check the engine of quality/ with the default rules, which `caits update` writes in a project.
+    include: ["bin/**/*.test.ts", "quality/**/*.test.mjs", "src/**/*.test.ts"],
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,js}"],

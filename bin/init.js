@@ -1,0 +1,259 @@
+// JavaScript, not TypeScript: npx runs this file from node_modules, where Node strips no types. TypeScript checks the types of the comments.
+import { spawnSync } from "node:child_process";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** @typedef {{ [key: string]: unknown }} PackageJson */
+/** @typedef {{ [name: string]: string }} Section */
+/** @typedef {{ key: string; project: unknown; caits: string }} KeptValue */
+/** @typedef {{ written: string[]; kept: string[]; ignored: string[]; values: KeptValue[] }} Report */
+
+/**
+ * @param {URL | string} file
+ * @returns {unknown}
+ */
+const readJson = file => JSON.parse(readFileSync(file, "utf8"));
+
+const OWN_PACKAGE = /** @type {{ version: string; devDependencies: Section }} */ (readJson(new URL("../package.json", import.meta.url)));
+
+/** The version of CAITS, and where npm gets it: the tag of this version, on GitHub. */
+export const VERSION = OWN_PACKAGE.version;
+export const SOURCE = `github:IngeniozIT/caits#v${VERSION}`;
+
+/**
+ * The files of the project: `init` writes them once, and never changes them after. They import the defaults of CAITS and change them.
+ * npm leaves `.gitignore` out of a package: the template names the dotfiles without their dot.
+ */
+const PROJECT_FILES = fileURLToPath(new URL("../template/project/", import.meta.url));
+const DOTFILES = new Set(["gitignore", "nvmrc"]);
+
+/** The defaults of CAITS: `init` and `update` write them in quality/caits/. CAITS owns this folder: `update` replaces it. */
+const DEFAULTS = fileURLToPath(new URL("../template/caits/", import.meta.url));
+export const DEFAULTS_FOLDER = "quality/caits";
+/** @param {string} version */
+const headerOf = version => `// CAITS ${version} wrote this file. Do not change it: \`npx caits update\` writes it again. Change the file of the project that uses it.\n`;
+const HEADER = /^\/\/ CAITS (\S+) wrote this file\./;
+
+/** What CAITS adds to the package.json of a project. The scripts run the tools with the configuration files of quality/. */
+const PACKAGE = {
+  type: "module",
+  imports: {
+    "#backend/*": "./src/backend/*",
+    "#frontend/*": "./src/frontend/*"
+  },
+  engines: {
+    node: "^22.18.0 || ^24.0.0 || >=26.0.0"
+  },
+  scripts: {
+    dev: "caits dev",
+    build: "marko-run build --config quality/vite.config.ts",
+    start: "node dist/index.mjs",
+    typecheck: "npm run build && mtc",
+    lint: "npm run lint:code && npm run lint:architecture",
+    "lint:code": "eslint --config quality/eslint.config.js .",
+    "lint:architecture": "caits architecture",
+    test: "vitest run --config quality/vite.config.ts",
+    "test:unit": "vitest run --config quality/vite.config.ts --exclude '**/infra/**/*.test.ts' --exclude '**/*.integration.test.ts'",
+    "test:contracts": "vitest run --config quality/vite.config.ts /infra/",
+    "test:integration": "vitest run --config quality/vite.config.ts .integration.test.ts",
+    "test:e2e": "caits e2e",
+    "test:coverage": "vitest run --config quality/vite.config.ts --coverage --reporter=default --reporter=@ingeniozit/caits/quality/test-docs/vitest-reporter",
+    "test:mutation": "stryker run quality/stryker.config.mjs && caits mutation-summary",
+    "test:watch": "vitest --config quality/vite.config.ts",
+    tdd: "vitest --config quality/vite.config.ts --changed",
+    check: "npm run typecheck && npm run lint && npm test && npm run test:e2e",
+    quality: "npm run check && npm run test:coverage"
+  }
+};
+
+/** The packages that a project needs. CAITS suggests the versions that it uses itself: those of its own devDependencies. */
+const TOOLS = {
+  dependencies: ["@marko/run", "marko"],
+  devDependencies: [
+    "@eslint/js", "@marko/compiler", "@marko/type-check", "@playwright/test", "@stryker-mutator/core", "@stryker-mutator/typescript-checker",
+    "@types/node", "@vitest/coverage-v8", "eslint", "happy-dom", "typescript", "typescript-eslint", "vite", "vitest"
+  ]
+};
+/** @param {string[]} names */
+const versionsOf = names => Object.fromEntries(names.map(name => [name, OWN_PACKAGE.devDependencies[name] ?? "*"]));
+export const SUGGESTED = { dependencies: versionsOf(TOOLS.dependencies), devDependencies: versionsOf(TOOLS.devDependencies) };
+
+const DEPENDENCY_KEYS = new Set(["dependencies", "devDependencies"]);
+
+/**
+ * Makes a CAITS project in `root`, or adds CAITS to the project in it: writes the files of the project, the defaults of CAITS
+ * (quality/caits/), the folders of the contexts, and adds to package.json what CAITS needs (`caits` is where npm gets CAITS). A file or
+ * a value that the project has already stays as it is: the report tells it. The lines of the template that .gitignore does not have go
+ * at its end. `init` installs nothing.
+ * @param {string} root
+ * @param {string} [caits]
+ * @returns {Report}
+ */
+export function init(root, caits = SOURCE) {
+  mkdirSync(root, { recursive: true });
+  /** @type {Report} */
+  const report = { written: [], kept: [], ignored: [], values: [] };
+  for (const file of filesOf(PROJECT_FILES)) {
+    const path = DOTFILES.has(file) ? `.${file}` : file;
+    const target = join(root, path);
+    if (path === ".gitignore" && existsSync(target)) report.ignored = addMissingLines(target, readFileSync(join(PROJECT_FILES, file), "utf8"));
+    else if (existsSync(target)) report.kept.push(path);
+    else {
+      mkdirSync(dirname(target), { recursive: true });
+      copyFileSync(join(PROJECT_FILES, file), target);
+      report.written.push(path);
+    }
+  }
+  report.written.push(...update(root));
+  for (const side of ["backend", "frontend"]) mkdirSync(join(root, "src", side), { recursive: true });
+  report.values = addToPackage(join(root, "package.json"), caits);
+  return report;
+}
+
+/**
+ * Writes the defaults of this version of CAITS in quality/caits/, in place of those that are there. Gives the files written.
+ * @param {string} root
+ * @returns {string[]}
+ */
+export function update(root) {
+  const folder = join(root, DEFAULTS_FOLDER);
+  rmSync(folder, { recursive: true, force: true });
+  mkdirSync(folder, { recursive: true });
+  return filesOf(DEFAULTS).map(file => {
+    writeFileSync(join(folder, file), headerOf(VERSION) + readFileSync(join(DEFAULTS, file), "utf8"));
+    return `${DEFAULTS_FOLDER}/${file}`;
+  });
+}
+
+/**
+ * The versions of CAITS that wrote the files of quality/caits/: one version when they come from one update, none when there is no file.
+ * @param {string} root
+ * @returns {string[]}
+ */
+export function defaultsVersions(root) {
+  const folder = join(root, DEFAULTS_FOLDER);
+  if (!existsSync(folder)) return [];
+  const versions = filesOf(folder).map(file => HEADER.exec(readFileSync(join(folder, file), "utf8"))?.[1] ?? "unknown");
+  return [...new Set(versions)];
+}
+
+/**
+ * The packages whose version in package.json is not the one that CAITS suggests. CAITS does not change them: the project chooses.
+ * @param {string} root
+ * @returns {KeptValue[]}
+ */
+export function otherVersions(root) {
+  const file = join(root, "package.json");
+  if (!existsSync(file)) return [];
+  const project = /** @type {PackageJson} */ (readJson(file));
+  return Object.values(SUGGESTED).flatMap(section => Object.entries(section).flatMap(([name, caits]) => {
+    const current = dependencyOf(project, name);
+    return current !== undefined && current !== caits ? [{ key: name, project: current, caits }] : [];
+  }));
+}
+
+/**
+ * Installs the packages of package.json, then the browser of the end-to-end tests. Gives false when a command fails.
+ * @param {string} root
+ * @returns {boolean}
+ */
+export function install(root) {
+  return run("npm", ["install"], root) && run("npx", ["playwright", "install", "chromium"], root);
+}
+
+/**
+ * @param {string} command
+ * @param {string[]} args
+ * @param {string} cwd
+ */
+function run(command, args, cwd) {
+  console.log(`\n> ${[command, ...args].join(" ")}`);
+  return spawnSync(command, args, { cwd, stdio: "inherit" }).status === 0;
+}
+
+/**
+ * The files of a folder and of its sub-folders, from the folder, with "/" on every system.
+ * @param {string} folder
+ * @returns {string[]}
+ */
+function filesOf(folder) {
+  return readdirSync(folder, { recursive: true, encoding: "utf8" })
+    .filter(path => statSync(join(folder, path)).isFile())
+    .map(path => path.split(sep).join("/"))
+    .sort();
+}
+
+/**
+ * Adds at the end of a file the lines of `text` that it does not have, comments and empty lines aside. Gives the added lines.
+ * @param {string} file
+ * @param {string} text
+ * @returns {string[]}
+ */
+function addMissingLines(file, text) {
+  const present = new Set(readFileSync(file, "utf8").split("\n").map(line => line.trim()));
+  const missing = text.split("\n").map(line => line.trim()).filter(line => line !== "" && !line.startsWith("#") && !present.has(line));
+  if (missing.length > 0) appendFileSync(file, `\n# CAITS\n${missing.join("\n")}\n`);
+  return missing;
+}
+
+/**
+ * Adds to a package.json (written when the project has none) the values that CAITS needs and that it does not have, and the packages
+ * with the versions that CAITS suggests. A package is present when the dependencies or the devDependencies name it. Gives the values
+ * that the project has already, and that differ.
+ * @param {string} file
+ * @param {string} caits
+ * @returns {KeptValue[]}
+ */
+function addToPackage(file, caits) {
+  const project = existsSync(file) ? /** @type {PackageJson} */ (readJson(file)) : { name: nameOf(dirname(file)), private: true };
+  const wanted = { ...PACKAGE, dependencies: SUGGESTED.dependencies, devDependencies: { "@ingeniozit/caits": caits, ...SUGGESTED.devDependencies } };
+  /** @type {KeptValue[]} */
+  const kept = [];
+  for (const [key, value] of Object.entries(wanted)) {
+    const present = project[key];
+    if (typeof value === "string") {
+      if (present === undefined) project[key] = value;
+      else if (present !== value) kept.push({ key, project: present, caits: value });
+      continue;
+    }
+    for (const [name, item] of Object.entries(value)) {
+      const current = DEPENDENCY_KEYS.has(key) ? dependencyOf(project, name) : sectionOf(project, key)?.[name];
+      if (current === undefined) project[key] = { ...sectionOf(project, key), [name]: item };
+      else if (current !== item) kept.push({ key: `${key}.${name}`, project: current, caits: item });
+    }
+  }
+  for (const key of DEPENDENCY_KEYS) {
+    const section = sectionOf(project, key);
+    if (section) project[key] = Object.fromEntries(Object.entries(section).sort(([a], [b]) => a.localeCompare(b)));
+  }
+  writeFileSync(file, `${JSON.stringify(project, null, 2)}\n`);
+  return kept;
+}
+
+/**
+ * @param {PackageJson} project
+ * @param {string} key
+ * @returns {Section | undefined}
+ */
+function sectionOf(project, key) {
+  const section = project[key];
+  return typeof section === "object" && section !== null ? /** @type {Section} */ (section) : undefined;
+}
+
+/**
+ * The version of a package in the dependencies or the devDependencies of a project.
+ * @param {PackageJson} project
+ * @param {string} name
+ */
+function dependencyOf(project, name) {
+  return sectionOf(project, "dependencies")?.[name] ?? sectionOf(project, "devDependencies")?.[name];
+}
+
+/**
+ * The name of a new package: the name of its folder, as npm accepts it.
+ * @param {string} folder
+ */
+function nameOf(folder) {
+  return basename(folder).toLowerCase().replace(/[^a-z0-9._~-]+/g, "-").replace(/^[._-]+/, "") || "app";
+}

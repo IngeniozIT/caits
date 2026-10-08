@@ -1,0 +1,21 @@
+{
+  // The paths start from this folder, quality/caits/: the root of the project is two folders up.
+  "include": ["../../src/**/*", "../../test/**/*", "../../.marko-run/routes.d.ts", "../../quality/**/*.ts"],
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "lib": ["DOM", "ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "paths": { "#shared/*": ["../../src/backend/shared/*"] },
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ESNext",
+    "types": ["node"],
+    "verbatimModuleSyntax": true
+  }
+}

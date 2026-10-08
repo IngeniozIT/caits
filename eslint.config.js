@@ -2,7 +2,7 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["node_modules/**", "reports/**", ".stryker-tmp/**"] },
+  { ignores: ["node_modules/**", "reports/**", ".stryker-tmp/**", "quality/**", "template/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
@@ -17,13 +17,18 @@ export default tseslint.config(
     }
   },
   {
+    // TypeScript checks the names of the JavaScript files (checkJs), and knows the globals of Node.
+    files: ["**/*.js"],
+    rules: { "no-undef": "off" }
+  },
+  {
     // The kernel imports the virtual modules of its Vite plugin: the files that do name the types of these modules with a reference,
     // so that the program of a project, which only reaches the kernel through its imports, sees them too.
     files: ["src/**/*.ts"],
     rules: { "@typescript-eslint/triple-slash-reference": ["error", { path: "always" }] }
   },
   {
-    files: ["src/**/*.test.ts", "src/testing/**/*.ts", "test/**/*.ts"],
+    files: ["bin/**/*.test.ts", "src/**/*.test.ts", "src/testing/**/*.ts", "test/**/*.ts"],
     rules: { "@typescript-eslint/unbound-method": "off", "@typescript-eslint/no-unsafe-assignment": "off", "@typescript-eslint/no-unsafe-member-access": "off", "@typescript-eslint/no-unsafe-argument": "off", "@typescript-eslint/no-unsafe-call": "off", "@typescript-eslint/require-await": "off", "@typescript-eslint/no-empty-function": "off" }
   }
 );
