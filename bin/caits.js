@@ -3,7 +3,7 @@
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { defaultsVersions, DEFAULTS_FOLDER, init, install, otherVersions, SOURCE, update, VERSION } from "./init.js";
+import { defaultsVersions, DEFAULTS_FOLDER, EXAMPLE_SOURCE, init, install, otherVersions, SOURCE, update, VERSION } from "./init.js";
 
 const USAGE = `Usage: caits <command>
 
@@ -12,7 +12,10 @@ const USAGE = `Usage: caits <command>
                        package.json only the values that it does not have. Then it installs the packages and the browser of the
                        end-to-end tests.
     --example          Write a small app instead of an empty page: a menu, and a page where the user adds, edits and removes
-                       messages, which the backend keeps in tmp/messages.json. Each layer and each kind of test is there.
+                       messages, which the backend keeps in tmp/messages.json. Each layer and each kind of test is there. The
+                       app is not in CAITS: git gets it from ${EXAMPLE_SOURCE}
+    --example-source <source>
+                       Write the example of this source: a git repository, with # and a tag or a branch, or a folder.
     --caits <source>   Where npm gets CAITS. Default: ${SOURCE}
     --no-install       Write the files, but install nothing.
   update               Writes the defaults of the installed CAITS in ${DEFAULTS_FOLDER}/. Run it after you install another version.
@@ -31,12 +34,13 @@ const count = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 const [command, ...rest] = process.argv.slice(2);
 
 if (command === "init") {
-  const { values: options, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { caits: { type: "string" }, example: { type: "boolean" }, "no-install": { type: "boolean" } } });
+  const { values: options, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { caits: { type: "string" }, example: { type: "boolean" }, "example-source": { type: "string" }, "no-install": { type: "boolean" } } });
+  const example = options["example-source"] ?? (options.example ? EXAMPLE_SOURCE : undefined);
   if (positionals.length > 1) fail();
   else if (positionals.length === 0 && !existsSync("package.json")) {
     console.error("This folder has no package.json. Give the folder of the new project (`caits init my-app`), or `caits init .` to use this folder.");
     process.exitCode = 1;
-  } else runInit(resolve(positionals[0] ?? "."), options.caits, !options["no-install"], options.example ?? false);
+  } else runInit(resolve(positionals[0] ?? "."), options.caits, !options["no-install"], example);
 } else if (command === "update") {
   const written = update(process.cwd());
   console.log(`CAITS ${VERSION}: wrote ${count(written.length, "file")} in ${DEFAULTS_FOLDER}/.`);
@@ -70,11 +74,20 @@ function fail() {
  * @param {string} root
  * @param {string | undefined} caits
  * @param {boolean} withInstall
- * @param {boolean} example
+ * @param {string | undefined} example
  */
 function runInit(root, caits, withInstall, example) {
   console.log(`CAITS ${VERSION}: ${root}\n`);
-  const { written, kept, ignored, values } = init(root, caits, { example });
+  if (example) console.log(`The example: ${example}\n`);
+  let report;
+  try {
+    report = init(root, caits, { example });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+    return;
+  }
+  const { written, kept, ignored, values } = report;
   console.log(`Wrote ${count(written.length, "file")}. CAITS owns those of ${DEFAULTS_FOLDER}/: the others are yours.`);
   if (kept.length > 0) {
     console.log(`Kept ${count(kept.length, "file")} that the project has already: ${kept.join(", ")}.`);

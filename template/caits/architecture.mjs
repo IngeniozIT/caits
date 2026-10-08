@@ -326,11 +326,13 @@ export const rules = [
   },
   {
     name: "imports-by-shortcut",
-    description: "In src, an import does not go up a folder (../). A context imports its own files with #context/ and the context shared with #shared/; a route imports the contexts with #backend/ and #frontend/. Thus an import does not change when its file moves.",
+    description: "In src, an import does not go up a folder (../). A context imports its own files with #context/ and the context shared with #shared/; a route imports the contexts with #backend/ and #frontend/. Thus an import does not change when its file moves. A stylesheet loads only the files of its folder: Sass reads # as the start of a fragment, and a View reads the values of the theme as CSS variables.",
     on: "file",
     check: ({ path, imports }) => path.startsWith("src/")
       && imports.filter(specifier => specifier.split("/").includes(".."))
-        .map(specifier => `an import does not go up a folder: use #context/ in a context, #shared/ for shared, #backend/ or #frontend/ in a route (${specifier})`)
+        .map(specifier => path.endsWith(".scss")
+          ? `a stylesheet does not go up a folder: it loads the files of its folder, and a View reads the values of the theme as CSS variables (${specifier})`
+          : `an import does not go up a folder: use #context/ in a context, #shared/ for shared, #backend/ or #frontend/ in a route (${specifier})`)
   },
   {
     name: "contexts-isolated",
@@ -394,10 +396,12 @@ export const rules = [
   },
   {
     name: "frontend-routes-content",
-    description: "src/routes/_frontend holds the pages (+page.marko), the layouts (+layout.marko), and in component/ the components that only these pages use.",
+    description: "src/routes/_frontend holds the pages (+page.marko), the layouts (+layout.marko), in component/ the components that only these pages use, in style/ the stylesheets (SCSS) of the app, and next to a page or a layout its stylesheet.",
     on: "file",
-    check: ({ path }) => path.startsWith("src/routes/_frontend/") && !/\/\+(page|layout)\.marko$/.test(path) && !/\/component\/[^/]+$/.test(path)
-      && "routes/_frontend holds +page.marko, +layout.marko, and in component/ the components that only its pages use"
+    check: ({ path }, { paths }) => path.startsWith("src/routes/_frontend/") && !/\/\+(page|layout)\.marko$/.test(path) && !/\/component\/[^/]+$/.test(path)
+      && !/^src\/routes\/_frontend\/style\/([^/]+\/)*[^/]+\.scss$/.test(path)
+      && !(path.endsWith(".scss") && ["+page.marko", "+layout.marko"].some(name => paths.has(`${path.slice(0, path.lastIndexOf("/"))}/${name}`)))
+      && "routes/_frontend holds +page.marko, +layout.marko, in component/ the components that only its pages use, in style/ the stylesheets of the app, and next to a page or a layout its stylesheet"
   },
   {
     name: "backend-routes-content",

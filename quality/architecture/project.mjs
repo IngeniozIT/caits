@@ -42,11 +42,13 @@ const contextFolderOf = path => /^src\/(backend|frontend)\/[^/]+(?=\/)/.exec(pat
 /**
  * An import names a package (the kernel is one), or a file of the project: its target is then the path from the root of the project.
  * So is a shortcut: `#context/domain/entity/Note.js`, in src/backend/notes, is src/backend/notes/domain/entity/Note.js.
+ * So is a path from the root of the project (`/src/…`): Vite reads it, and the reading of a stylesheet gives one for a load path.
  */
 export function resolveImport(from, specifier, root) {
   const [, shortcut, rest] = /^#([^/]+)\/(.*)$/.exec(specifier) ?? [];
   const folder = shortcut === "context" ? contextFolderOf(from) : SHORTCUTS.get(shortcut);
   if (folder) return { internal: true, target: posix.normalize(`${folder}/${rest}`) };
+  if (specifier.startsWith("/")) return { internal: true, target: posix.normalize(specifier.slice(1)) };
   if (!specifier.startsWith(".")) return { internal: false, target: specifier };
   const absolute = resolve(root, dirname(from), specifier);
   return { internal: true, target: relative(root, absolute).replaceAll("\\", "/") };

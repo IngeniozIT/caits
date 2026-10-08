@@ -1,11 +1,13 @@
 // JavaScript, not TypeScript: npx runs this file from node_modules, where Node strips no types. TypeScript checks the types of the comments.
 import { spawnSync } from "node:child_process";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** @typedef {{ [key: string]: unknown }} PackageJson */
 /** @typedef {{ [name: string]: string }} Section */
+/** @typedef {{ dependencies?: Section; devDependencies?: Section }} Packages */
 /** @typedef {{ key: string; project: unknown; caits: string }} KeptValue */
 /** @typedef {{ written: string[]; kept: string[]; ignored: string[]; values: KeptValue[] }} Report */
 
@@ -23,13 +25,20 @@ export const SOURCE = `github:IngeniozIT/caits#v${VERSION}`;
 
 /**
  * The files of the project: `init` writes them once, and never changes them after. The files of quality/ import the defaults of CAITS and
- * change them. Then comes the code: a first page (empty/), or a small app that shows each layer (example/).
+ * change them. Then comes the code: a first page (empty/), or the example.
  * npm leaves `.gitignore` out of a package: the template names the dotfiles without their dot.
  */
 const PROJECT_FILES = fileURLToPath(new URL("../template/project/", import.meta.url));
 const EMPTY = fileURLToPath(new URL("../template/empty/", import.meta.url));
-const EXAMPLE = fileURLToPath(new URL("../template/example/", import.meta.url));
 const DOTFILES = new Set(["gitignore", "nvmrc"]);
+
+/**
+ * The example, a small app that shows each layer, is not in the package of CAITS: `init --example` gets it from its repository, at the
+ * tag of this version, with git over SSH (as npm gets CAITS). A source is a git repository, with `#` and a tag or a branch, or a folder.
+ * `init` takes the files of its folders src/ and test/, and the packages of its package.json.
+ */
+export const EXAMPLE_SOURCE = `git@github.com:IngeniozIT/caits-example.git#v${VERSION}`;
+const EXAMPLE_FOLDERS = ["src", "test"];
 
 /** The defaults of CAITS: `init` and `update` write them in quality/caits/. CAITS owns this folder: `update` replaces it. */
 const DEFAULTS = fileURLToPath(new URL("../template/caits/", import.meta.url));
@@ -75,7 +84,7 @@ const TOOLS = {
   dependencies: ["@marko/run", "marko"],
   devDependencies: [
     "@eslint/js", "@marko/compiler", "@marko/type-check", "@playwright/test", "@stryker-mutator/core", "@stryker-mutator/typescript-checker",
-    "@types/node", "@vitest/coverage-v8", "eslint", "happy-dom", "typescript", "typescript-eslint", "vite", "vitest"
+    "@types/node", "@vitest/coverage-v8", "eslint", "happy-dom", "sass", "typescript", "typescript-eslint", "vite", "vitest"
   ]
 };
 /** @param {string[]} names */
@@ -86,35 +95,80 @@ const DEPENDENCY_KEYS = new Set(["dependencies", "devDependencies"]);
 
 /**
  * Makes a CAITS project in `root`, or adds CAITS to the project in it: writes the files of the project, with a first page or, with
- * `example`, a small app; the defaults of CAITS (quality/caits/); the folders of the contexts; and adds to package.json what CAITS needs
- * (`caits` is where npm gets CAITS). A file or a value that the project has already stays as it is: the report tells it. The lines of the
- * template that .gitignore does not have go at its end. `init` installs nothing.
+ * `example` (its source), the example; the defaults of CAITS (quality/caits/); the folders of the contexts; and adds to package.json what
+ * CAITS needs (`caits` is where npm gets CAITS), and the packages of the example. A file or a value that the project has already stays as
+ * it is: the report tells it. The lines of the template that .gitignore does not have go at its end. `init` installs nothing. When it
+ * cannot get the example, it throws, and writes nothing.
  * @param {string} root
  * @param {string} [caits]
- * @param {{ example?: boolean }} [options]
+ * @param {{ example?: string }} [options]
  * @returns {Report}
  */
-export function init(root, caits = SOURCE, { example = false } = {}) {
-  mkdirSync(root, { recursive: true });
-  /** @type {Report} */
-  const report = { written: [], kept: [], ignored: [], values: [] };
-  for (const folder of [PROJECT_FILES, example ? EXAMPLE : EMPTY]) {
-    for (const file of filesOf(folder)) {
-      const path = DOTFILES.has(file) ? `.${file}` : file;
-      const target = join(root, path);
-      if (path === ".gitignore" && existsSync(target)) report.ignored = addMissingLines(target, readFileSync(join(folder, file), "utf8"));
-      else if (existsSync(target)) report.kept.push(path);
-      else {
-        mkdirSync(dirname(target), { recursive: true });
-        copyFileSync(join(folder, file), target);
-        report.written.push(path);
+export function init(root, caits = SOURCE, { example } = {}) {
+  const code = example === undefined ? { folder: EMPTY, files: filesOf(EMPTY), packages: {}, remove() {} } : getExample(example);
+  try {
+    mkdirSync(root, { recursive: true });
+    /** @type {Report} */
+    const report = { written: [], kept: [], ignored: [], values: [] };
+    for (const { folder, files } of [{ folder: PROJECT_FILES, files: filesOf(PROJECT_FILES) }, code]) {
+      for (const file of files) {
+        const path = DOTFILES.has(file) ? `.${file}` : file;
+        const target = join(root, path);
+        if (path === ".gitignore" && existsSync(target)) report.ignored = addMissingLines(target, readFileSync(join(folder, file), "utf8"));
+        else if (existsSync(target)) report.kept.push(path);
+        else {
+          mkdirSync(dirname(target), { recursive: true });
+          copyFileSync(join(folder, file), target);
+          report.written.push(path);
+        }
       }
     }
+    report.written.push(...update(root));
+    for (const side of ["backend", "frontend"]) mkdirSync(join(root, "src", side), { recursive: true });
+    report.values = addToPackage(join(root, "package.json"), caits, code.packages);
+    return report;
+  } finally {
+    code.remove();
   }
-  report.written.push(...update(root));
-  for (const side of ["backend", "frontend"]) mkdirSync(join(root, "src", side), { recursive: true });
-  report.values = addToPackage(join(root, "package.json"), caits);
-  return report;
+}
+
+/**
+ * The example of a source: its folder, the files of its folders src/ and test/, and the packages of its package.json. A git source is
+ * cloned in a temporary folder: `remove` removes it.
+ * @param {string} source
+ * @returns {{ folder: string; files: string[]; packages: Packages; remove: () => void }}
+ */
+function getExample(source) {
+  const local = existsSync(source) && statSync(source).isDirectory();
+  const folder = local ? source : cloneExample(source);
+  const remove = () => { if (!local) rmSync(folder, { recursive: true, force: true }); };
+  if (!existsSync(join(folder, "src"))) {
+    remove();
+    throw new Error(`${source} is not an example of CAITS: it has no folder src/.`);
+  }
+  const files = EXAMPLE_FOLDERS.filter(name => existsSync(join(folder, name))).flatMap(name => filesOf(join(folder, name)).map(file => `${name}/${file}`));
+  const manifest = join(folder, "package.json");
+  const project = existsSync(manifest) ? /** @type {PackageJson} */ (readJson(manifest)) : {};
+  const packages = { dependencies: sectionOf(project, "dependencies"), devDependencies: sectionOf(project, "devDependencies") };
+  return { folder, files, packages, remove };
+}
+
+/**
+ * Clones a git source (a repository, then `#` and a tag or a branch) in a temporary folder, without its history. Gives the folder.
+ * @param {string} source
+ * @returns {string}
+ */
+function cloneExample(source) {
+  const hash = source.lastIndexOf("#");
+  const [repository, ref] = hash === -1 ? [source, undefined] : [source.slice(0, hash), source.slice(hash + 1)];
+  const folder = mkdtempSync(join(tmpdir(), "caits-example-"));
+  const args = ["clone", "--quiet", "--depth", "1", ...(ref ? ["--branch", ref] : []), "--", repository, folder];
+  const result = spawnSync("git", args, { encoding: "utf8", stdio: ["ignore", "ignore", "pipe"] });
+  if (result.status !== 0) {
+    rmSync(folder, { recursive: true, force: true });
+    throw new Error(`git cannot get the example from ${source}:\n${result.stderr || result.error?.message}`);
+  }
+  return folder;
 }
 
 /**
@@ -205,15 +259,18 @@ function addMissingLines(file, text) {
 
 /**
  * Adds to a package.json (written when the project has none) the values that CAITS needs and that it does not have, and the packages
- * with the versions that CAITS suggests. A package is present when the dependencies or the devDependencies name it. Gives the values
- * that the project has already, and that differ.
+ * with the versions that CAITS suggests, then those of the example. A package is present when the dependencies or the devDependencies
+ * name it. Gives the values that the project has already, and that differ.
  * @param {string} file
  * @param {string} caits
+ * @param {Packages} example
  * @returns {KeptValue[]}
  */
-function addToPackage(file, caits) {
+function addToPackage(file, caits, example) {
   const project = existsSync(file) ? /** @type {PackageJson} */ (readJson(file)) : { name: nameOf(dirname(file)), private: true };
-  const wanted = { ...PACKAGE, dependencies: SUGGESTED.dependencies, devDependencies: { "@ingeniozit/caits": caits, ...SUGGESTED.devDependencies } };
+  const dependencies = { ...SUGGESTED.dependencies, ...example.dependencies };
+  const devDependencies = { "@ingeniozit/caits": caits, ...SUGGESTED.devDependencies, ...example.devDependencies };
+  const wanted = { ...PACKAGE, dependencies, devDependencies };
   /** @type {KeptValue[]} */
   const kept = [];
   for (const [key, value] of Object.entries(wanted)) {

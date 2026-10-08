@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readMarko } from "./architecture/adapters/marko.mjs";
+import { readScss } from "./architecture/adapters/scss.mjs";
 import { readTypeScript } from "./architecture/adapters/typescript.mjs";
 import { isTestCode, locate, resolveImport } from "./architecture/project.mjs";
 
@@ -17,9 +18,14 @@ export const RULES_FILE = "quality/architecture.mjs";
  */
 export function checkArchitecture(root, sources, rules) {
   checkRules(rules);
-  const files = sources.map(({ path, text }) => ({ path, ...(path.endsWith(".marko") ? readMarko(join(root, path), text) : readTypeScript(path, text)) }));
+  const paths = new Set(sources.map(({ path }) => path));
+  const read = (path, text) => {
+    if (path.endsWith(".marko")) return readMarko(join(root, path), text);
+    return path.endsWith(".scss") ? readScss(path, text, paths) : readTypeScript(path, text);
+  };
+  const files = sources.map(({ path, text }) => ({ path, ...read(path, text) }));
   const production = files.filter(file => !isTestCode(file.path));
-  const project = { root, files, paths: new Set(files.map(file => file.path)) };
+  const project = { root, files, paths };
 
   const violations = [];
   const report = (rule, file, message, subject) => violations.push({ rule: rule.name, file, message, subject });
@@ -64,7 +70,7 @@ function checkRules(rules) {
   }
 }
 
-/** `caits architecture`: checks the rules of quality/architecture.mjs on the files of src/ and test/. */
+/** `caits architecture`: checks the rules of quality/architecture.mjs on the files of src/ and test/: the code, and the stylesheets (SCSS). */
 export async function run() {
   const root = process.cwd();
   const { default: rules } = await import(pathToFileURL(join(root, RULES_FILE)).href);
@@ -73,7 +79,7 @@ export async function run() {
     return statSync(path).isDirectory() ? walk(path) : [path];
   });
   const sources = [...walk(join(root, "src")), ...walk(join(root, "test"))]
-    .filter(path => /\.(ts|marko)$/.test(path))
+    .filter(path => /\.(ts|marko|scss)$/.test(path))
     .map(absolute => ({ path: relative(root, absolute).replaceAll("\\", "/"), text: readFileSync(absolute, "utf8") }));
   const { production, tests, violations } = checkArchitecture(root, sources, rules);
 

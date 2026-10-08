@@ -10,10 +10,13 @@ CAITS (Clean Architecture In TypeScript) is the technical base of a Marko projec
 
 Your project holds the business code, in contexts. CAITS holds no business code.
 
+The architecture rules and the tests make the **harness** of the project: together, they keep each layer in its place. `npm run check` runs the harness. Run it before each commit.
+
 ## Pages
 
 1. [Installation](Installation.md): make a new project with CAITS, add CAITS to a project, and update CAITS.
 2. [Example](Example.md): the small app of `init --example`, layer by layer.
 3. [Quality](Quality.md): change the rules and the settings of the tools of your project.
+4. [Styles](Styles.md): write the styles in SCSS files: the CSS of all the pages, of one page, or of one component.
 
 The next pages will tell how to add a context, a use case and a port.

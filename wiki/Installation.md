@@ -9,7 +9,7 @@ This page tells how to make a new project with CAITS, how to add CAITS to a proj
 | Node.js | 22.18 or later, in version 22, 24, or 26 and later. Vitest does not support versions 23 and 25. |
 | git | Any version. npm uses git to get CAITS from GitHub. |
 
-You must also have read access to the GitHub repository `IngeniozIT/caits`. The repository is private: npm gets it with git over SSH. Your SSH key must give access to it. If the key has a passphrase, add the key to your SSH agent first (`ssh-add`).
+You must also have read access to the GitHub repository `IngeniozIT/caits`, and to `IngeniozIT/caits-example` for the example. The repositories are private: npm and `init` get them with git over SSH. Your SSH key must give access to it. If the key has a passphrase, add the key to your SSH agent first (`ssh-add`).
 
 ## Make a new project
 
@@ -99,7 +99,7 @@ CAITS suggests a version for each tool: the version that CAITS uses itself. The 
 
 | Script | What it does |
 |---|---|
-| `npm run dev` | Starts the app on http://localhost:3000 (or on the port `PORT`). |
+| `npm run dev` | Starts the app on http://localhost:3000 (or on the port `PORT`). The browser gets the changes on the port `HMR_PORT` (24678 when not set): to run two projects at the same time, give each its two ports. |
 | `npm run tdd` | Runs the tests of the files that you changed, again at each change. |
 | `npm test` | Runs all the unit tests. |
 | `npm run check` | Runs all the checks: types, lint, architecture, unit tests and end-to-end tests. Run it before a commit. |
@@ -110,7 +110,7 @@ The scripts are yours: you can change them. Some scripts run a command of CAITS:
 
 | Command | What it does |
 |---|---|
-| `caits dev` | Starts the development server with `quality/vite.config.ts`. |
+| `caits dev` | Starts the development server with `quality/vite.config.ts`. The server writes its files in `node_modules/.caits/dev/`, not in `dist/`: `npm run check` can run while the server runs. When the configuration changes (`quality/vite.config.ts`, an `.env` file), the server starts again by itself. |
 | `caits architecture` | Checks the rules of `quality/architecture.mjs` on `src/` and `test/`. |
 | `caits e2e` | Starts the server of `quality/playwright.config.ts`, then runs the end-to-end tests. |
 | `caits mutation-summary` | Gives the mutation score of each file. With `--survivors`, it also gives the mutants that survived. |
@@ -120,6 +120,7 @@ The scripts are yours: you can change them. Some scripts run a command of CAITS:
 
 | Option | What it does |
 |---|---|
-| `--example` | The command writes a small app in place of the first page: a menu, and a page where the user adds, edits and removes messages. See [Example](Example.md). |
+| `--example` | The command writes a small app in place of the first page: a home page, a menu, and a page where the user adds, edits and removes messages. It also adds the packages of the app (its fonts). The app is not in the package of CAITS: git gets it from the repository `IngeniozIT/caits-example`, at the tag of the version of CAITS. See [Example](Example.md). |
+| `--example-source <source>` | The command writes the example of this source: a git repository, with `#` and a tag or a branch (for example `git@github.com:IngeniozIT/caits-example.git#main`), or a folder. |
 | `--no-install` | The command writes the files, but installs nothing. Then run `npm install` and `npx playwright install chromium` yourself. |
 | `--caits <source>` | npm gets CAITS from this source, for example `git+file:///path/to/caits#v0.3.0`. By default, the source is the tag of the version of the command on GitHub. |

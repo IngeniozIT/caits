@@ -106,10 +106,17 @@ export default { send: () => new ListNotesQuery() };
 `,
   "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko": `import { frontendOf } from "@ingeniozit/caits/di/frontend";
 import { NotesRequested } from "#context/application/event/NotesRequested.js";
+import "./NotesBlock.scss";
 
 <button onClick() { frontendOf($global, "notes").events.publish(new NotesRequested()); }>Charger</button>
 `,
+  "src/frontend/notes/presentation/view/notes-block/NotesBlock.scss": ".notes-block { color: var(--ink); }\n",
 
+  "src/routes/_frontend/style/app.scss": '@use "sass:math";\n@use "@fontsource-variable/geist";\n@use "theme";\n',
+  "src/routes/_frontend/style/_theme.scss": ":root { --ink: #17153B; }\n",
+  "src/routes/_frontend/style/_values.scss": "$narrow: 56rem;\n",
+  "src/routes/_frontend/home-page.scss": '@use "values";\n\n.home-page { @media (max-width: values.$narrow) { display: grid; } }\n',
+  "src/routes/_frontend/+layout.marko": 'import "./style/app.scss";\n\n<html><body><${input.content}/></body></html>\n',
   "src/routes/_frontend/+page.marko": `import NotesBlock from "#frontend/notes/presentation/view/notes-block/NotesBlock.marko";
 
 <main><\${NotesBlock}/></main>
@@ -255,5 +262,33 @@ describe("the architecture rules", () => {
 
   test("each rule has a case that breaks it", () => {
     expect(cases.map(({ rule }) => rule)).toEqual(rules.map(({ name }) => name));
+  });
+});
+
+describe("the rules on the stylesheets", () => {
+  const viewStylesheet = "src/frontend/notes/presentation/view/notes-block/NotesBlock.scss";
+  const theme = "../../../../../routes/_frontend/style/theme";
+
+  test.for([
+    ["@use", `@use "${theme}";\n`],
+    ["@forward", `@forward "${theme}";\n`],
+    ["@import", `@import "reset", "${theme}";\n`]
+  ])("a stylesheet that loads a file with %s follows the rules of the imports", ([, text]) => {
+    expect(violationsWith({ [viewStylesheet]: text })).toEqual([["imports-by-shortcut", viewStylesheet], ["contexts-without-routes", viewStylesheet]]);
+  });
+
+  test("tells a stylesheet that goes up a folder to load the files of its folder: Sass has no shortcut", () => {
+    const sources = Object.entries({ ...project, [viewStylesheet]: `@use "${theme}";\n` }).map(([path, text]) => ({ path, text }));
+    const [violation] = checkArchitecture(ROOT, sources, rules).violations;
+    expect(violation.message).toBe(`a stylesheet does not go up a folder: it loads the files of its folder, and a View reads the values of the theme as CSS variables (${theme})`);
+  });
+
+  test("a View that loads the values of the routes, by the load path of Sass, breaks contexts-without-routes", () => {
+    expect(violationsWith({ [viewStylesheet]: '@use "values";\n' })).toEqual([["contexts-without-routes", viewStylesheet]]);
+  });
+
+  test("a stylesheet of the routes out of style/, and next to no page or layout, breaks frontend-routes-content", () => {
+    const stylesheet = "src/routes/_frontend/messages/messages-page.scss";
+    expect(violationsWith({ [stylesheet]: ".messages-page { color: red; }\n" })).toEqual([["frontend-routes-content", stylesheet]]);
   });
 });

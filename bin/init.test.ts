@@ -1,8 +1,9 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { defaultsVersions, init, otherVersions, SUGGESTED, update, VERSION } from "./init.js";
+import { defaultsVersions, EXAMPLE_SOURCE, init, otherVersions, SUGGESTED, update, VERSION } from "./init.js";
 
 type PackageJson = { name: string; private: boolean; type: string; scripts: Record<string, string>; dependencies: Record<string, string>; devDependencies: Record<string, string> };
 
@@ -16,8 +17,22 @@ function newFolder(): string {
 }
 
 const read = (root: string, path: string) => readFileSync(join(root, path), "utf8");
-const write = (root: string, path: string, text: string) => writeFileSync(join(root, path), text);
+const write = (root: string, path: string, text: string) => {
+  mkdirSync(dirname(join(root, path)), { recursive: true });
+  writeFileSync(join(root, path), text);
+};
+const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=CAITS", "-c", "user.email=caits@example.com", ...args], { cwd, stdio: "ignore" });
 const packageOf = (root: string) => JSON.parse(read(root, "package.json")) as PackageJson;
+/** An example with a page, an end-to-end test, its packages, and a file that stays in its repository. */
+function newExample(page = "<h1>Example</h1>"): string {
+  const example = newFolder();
+  write(example, "src/routes/_frontend/+page.marko", page);
+  write(example, "test/e2e/example.spec.ts", "// the example\n");
+  write(example, "package.json", JSON.stringify({ name: "caits-example", dependencies: { "a-font": "^1.0.0" }, devDependencies: { "a-tool": "^2.0.0" } }));
+  write(example, "README.md", "# The example\n");
+  return example;
+}
+
 const DEFAULTS = ["architecture.mjs", "eslint.js", "marko-modules.d.ts", "playwright.ts", "stryker.mjs", "tsconfig.json", "tsconfig.mutation.json", "vite.ts"].map(file => `quality/caits/${file}`);
 
 describe("init", () => {
@@ -38,22 +53,55 @@ describe("init", () => {
       type: "module",
       scripts: { check: "npm run typecheck && npm run lint && npm test && npm run test:e2e" },
       dependencies: { marko: SUGGESTED.dependencies.marko },
-      devDependencies: { "@ingeniozit/caits": "github:owner/caits#v9", typescript: SUGGESTED.devDependencies.typescript }
+      devDependencies: { "@ingeniozit/caits": "github:owner/caits#v9", sass: SUGGESTED.devDependencies.sass, typescript: SUGGESTED.devDependencies.typescript }
     });
   });
 
-  test("with the example, writes a small app in place of the first page", () => {
+  test("with the example, writes its src/ and test/ in place of the first page, and adds its packages", () => {
     const root = newFolder();
 
-    const { written } = init(root, "caits", { example: true });
+    const { written } = init(root, "caits", { example: newExample() });
 
-    expect(written).toEqual(expect.arrayContaining([
-      "src/routes/_frontend/+layout.marko", "src/routes/_frontend/+page.marko", "src/routes/_frontend/messages/+page.marko",
-      "src/routes/_backend/api/messages/+handler.ts", "src/routes/_backend/api/messages/$id/+handler.ts",
-      "src/backend/messages/di.ts", "src/backend/messages/package.json", "src/frontend/messages/di.ts", "test/e2e/messages.spec.ts", ...DEFAULTS
-    ]));
+    expect(written).toEqual(expect.arrayContaining(["src/routes/_frontend/+page.marko", "test/e2e/example.spec.ts", "quality/architecture.mjs", ...DEFAULTS]));
     expect(written).not.toContain("test/e2e/home.spec.ts");
-    expect(read(root, "src/routes/_frontend/+page.marko")).toContain("<h1>Home</h1>");
+    expect(written).not.toContain("README.md");
+    expect(read(root, "src/routes/_frontend/+page.marko")).toBe("<h1>Example</h1>");
+    expect(packageOf(root)).toMatchObject({
+      dependencies: { "a-font": "^1.0.0", marko: SUGGESTED.dependencies.marko },
+      devDependencies: { "a-tool": "^2.0.0", typescript: SUGGESTED.devDependencies.typescript }
+    });
+  });
+
+  test("gets the example of a git repository at a tag, and removes its clone", () => {
+    const repository = newExample("<h1>Tagged</h1>");
+    git(repository, "init", "--quiet");
+    git(repository, "add", ".");
+    git(repository, "commit", "--quiet", "-m", "the example");
+    git(repository, "tag", "v1");
+    write(repository, "src/routes/_frontend/+page.marko", "<h1>After the tag</h1>");
+    git(repository, "commit", "--quiet", "-am", "after the tag");
+    const root = newFolder();
+    const clones = () => readdirSync(tmpdir()).filter(name => name.startsWith("caits-example-"));
+    const before = clones();
+
+    const { written } = init(root, "caits", { example: `file://${repository}#v1` });
+
+    expect(read(root, "src/routes/_frontend/+page.marko")).toBe("<h1>Tagged</h1>");
+    expect(clones()).toEqual(before);
+    expect(written.filter(path => path.startsWith(".git/"))).toEqual([]);
+    expect(packageOf(root).dependencies).toMatchObject({ "a-font": "^1.0.0" });
+  });
+
+  test("without the example, writes nothing: a source that git cannot get, or a folder without src/", () => {
+    const root = join(newFolder(), "app");
+
+    expect(() => init(root, "caits", { example: `file://${join(newFolder(), "none")}#v1` })).toThrow(/^git cannot get the example from file:.*#v1:\n./s);
+    expect(() => init(root, "caits", { example: newFolder() })).toThrow(/is not an example of CAITS: it has no folder src\//);
+    expect(existsSync(root)).toBe(false);
+  });
+
+  test("gets the example of the tag of this version of CAITS", () => {
+    expect(EXAMPLE_SOURCE).toBe(`git@github.com:IngeniozIT/caits-example.git#v${VERSION}`);
   });
 
   test("adds CAITS to a project: keeps its files and its values, and tells which ones differ", () => {
