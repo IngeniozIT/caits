@@ -11,6 +11,8 @@ const USAGE = `Usage: caits <command>
                        none: it must have a package.json). It writes only the files that the project does not have, and adds to
                        package.json only the values that it does not have. Then it installs the packages and the browser of the
                        end-to-end tests.
+    --example          Write a small app instead of an empty page: a menu, and a page where the user adds, edits and removes
+                       messages, which the backend keeps in tmp/messages.json. Each layer and each kind of test is there.
     --caits <source>   Where npm gets CAITS. Default: ${SOURCE}
     --no-install       Write the files, but install nothing.
   update               Writes the defaults of the installed CAITS in ${DEFAULTS_FOLDER}/. Run it after you install another version.
@@ -29,12 +31,12 @@ const count = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 const [command, ...rest] = process.argv.slice(2);
 
 if (command === "init") {
-  const { values: options, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { caits: { type: "string" }, "no-install": { type: "boolean" } } });
+  const { values: options, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { caits: { type: "string" }, example: { type: "boolean" }, "no-install": { type: "boolean" } } });
   if (positionals.length > 1) fail();
   else if (positionals.length === 0 && !existsSync("package.json")) {
     console.error("This folder has no package.json. Give the folder of the new project (`caits init my-app`), or `caits init .` to use this folder.");
     process.exitCode = 1;
-  } else runInit(resolve(positionals[0] ?? "."), options.caits, !options["no-install"]);
+  } else runInit(resolve(positionals[0] ?? "."), options.caits, !options["no-install"], options.example ?? false);
 } else if (command === "update") {
   const written = update(process.cwd());
   console.log(`CAITS ${VERSION}: wrote ${count(written.length, "file")} in ${DEFAULTS_FOLDER}/.`);
@@ -68,10 +70,11 @@ function fail() {
  * @param {string} root
  * @param {string | undefined} caits
  * @param {boolean} withInstall
+ * @param {boolean} example
  */
-function runInit(root, caits, withInstall) {
+function runInit(root, caits, withInstall, example) {
   console.log(`CAITS ${VERSION}: ${root}\n`);
-  const { written, kept, ignored, values } = init(root, caits);
+  const { written, kept, ignored, values } = init(root, caits, { example });
   console.log(`Wrote ${count(written.length, "file")}. CAITS owns those of ${DEFAULTS_FOLDER}/: the others are yours.`);
   if (kept.length > 0) {
     console.log(`Kept ${count(kept.length, "file")} that the project has already: ${kept.join(", ")}.`);

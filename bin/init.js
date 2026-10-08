@@ -22,10 +22,13 @@ export const VERSION = OWN_PACKAGE.version;
 export const SOURCE = `github:IngeniozIT/caits#v${VERSION}`;
 
 /**
- * The files of the project: `init` writes them once, and never changes them after. They import the defaults of CAITS and change them.
+ * The files of the project: `init` writes them once, and never changes them after. The files of quality/ import the defaults of CAITS and
+ * change them. Then comes the code: a first page (empty/), or a small app that shows each layer (example/).
  * npm leaves `.gitignore` out of a package: the template names the dotfiles without their dot.
  */
 const PROJECT_FILES = fileURLToPath(new URL("../template/project/", import.meta.url));
+const EMPTY = fileURLToPath(new URL("../template/empty/", import.meta.url));
+const EXAMPLE = fileURLToPath(new URL("../template/example/", import.meta.url));
 const DOTFILES = new Set(["gitignore", "nvmrc"]);
 
 /** The defaults of CAITS: `init` and `update` write them in quality/caits/. CAITS owns this folder: `update` replaces it. */
@@ -82,27 +85,30 @@ export const SUGGESTED = { dependencies: versionsOf(TOOLS.dependencies), devDepe
 const DEPENDENCY_KEYS = new Set(["dependencies", "devDependencies"]);
 
 /**
- * Makes a CAITS project in `root`, or adds CAITS to the project in it: writes the files of the project, the defaults of CAITS
- * (quality/caits/), the folders of the contexts, and adds to package.json what CAITS needs (`caits` is where npm gets CAITS). A file or
- * a value that the project has already stays as it is: the report tells it. The lines of the template that .gitignore does not have go
- * at its end. `init` installs nothing.
+ * Makes a CAITS project in `root`, or adds CAITS to the project in it: writes the files of the project, with a first page or, with
+ * `example`, a small app; the defaults of CAITS (quality/caits/); the folders of the contexts; and adds to package.json what CAITS needs
+ * (`caits` is where npm gets CAITS). A file or a value that the project has already stays as it is: the report tells it. The lines of the
+ * template that .gitignore does not have go at its end. `init` installs nothing.
  * @param {string} root
  * @param {string} [caits]
+ * @param {{ example?: boolean }} [options]
  * @returns {Report}
  */
-export function init(root, caits = SOURCE) {
+export function init(root, caits = SOURCE, { example = false } = {}) {
   mkdirSync(root, { recursive: true });
   /** @type {Report} */
   const report = { written: [], kept: [], ignored: [], values: [] };
-  for (const file of filesOf(PROJECT_FILES)) {
-    const path = DOTFILES.has(file) ? `.${file}` : file;
-    const target = join(root, path);
-    if (path === ".gitignore" && existsSync(target)) report.ignored = addMissingLines(target, readFileSync(join(PROJECT_FILES, file), "utf8"));
-    else if (existsSync(target)) report.kept.push(path);
-    else {
-      mkdirSync(dirname(target), { recursive: true });
-      copyFileSync(join(PROJECT_FILES, file), target);
-      report.written.push(path);
+  for (const folder of [PROJECT_FILES, example ? EXAMPLE : EMPTY]) {
+    for (const file of filesOf(folder)) {
+      const path = DOTFILES.has(file) ? `.${file}` : file;
+      const target = join(root, path);
+      if (path === ".gitignore" && existsSync(target)) report.ignored = addMissingLines(target, readFileSync(join(folder, file), "utf8"));
+      else if (existsSync(target)) report.kept.push(path);
+      else {
+        mkdirSync(dirname(target), { recursive: true });
+        copyFileSync(join(folder, file), target);
+        report.written.push(path);
+      }
     }
   }
   report.written.push(...update(root));

@@ -42,6 +42,20 @@ describe("init", () => {
     });
   });
 
+  test("with the example, writes a small app in place of the first page", () => {
+    const root = newFolder();
+
+    const { written } = init(root, "caits", { example: true });
+
+    expect(written).toEqual(expect.arrayContaining([
+      "src/routes/_frontend/+layout.marko", "src/routes/_frontend/+page.marko", "src/routes/_frontend/messages/+page.marko",
+      "src/routes/_backend/api/messages/+handler.ts", "src/routes/_backend/api/messages/$id/+handler.ts",
+      "src/backend/messages/di.ts", "src/backend/messages/package.json", "src/frontend/messages/di.ts", "test/e2e/messages.spec.ts", ...DEFAULTS
+    ]));
+    expect(written).not.toContain("test/e2e/home.spec.ts");
+    expect(read(root, "src/routes/_frontend/+page.marko")).toContain("<h1>Home</h1>");
+  });
+
   test("adds CAITS to a project: keeps its files and its values, and tells which ones differ", () => {
     const root = newFolder();
     write(root, "package.json", JSON.stringify({ name: "old", type: "commonjs", scripts: { test: "jest", other: "x" }, devDependencies: { marko: "^5.0.0" } }));

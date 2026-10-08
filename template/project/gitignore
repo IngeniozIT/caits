@@ -7,7 +7,7 @@ dist/
 tsconfig.tsbuildinfo
 
 # Runtime data (file persistence adapter)
-.data/
+tmp/
 
 # Test, coverage and mutation output
 reports/

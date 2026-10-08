@@ -1,0 +1,77 @@
+import { frontendOf } from "@ingeniozit/caits/di/frontend";
+import { follow } from "@ingeniozit/caits/state/follow";
+import { MessageAdditionRequested } from "#context/application/event/MessageAdditionRequested.js";
+import { MessageEditionRequested } from "#context/application/event/MessageEditionRequested.js";
+import { MessageRemovalRequested } from "#context/application/event/MessageRemovalRequested.js";
+import { loadMessageBoard } from "./loadMessageBoard.js";
+import { idleMessageBoardViewModel, presentMessageBoard, type MessageBoardViewModel } from "./presentMessageBoard.js";
+
+<let/viewModel=idleMessageBoardViewModel as MessageBoardViewModel>
+<let/text="">
+<let/editing=undefined as string | undefined>
+<let/draft="">
+
+<lifecycle
+  onMount() {
+    let pending: MessageBoardViewModel["pending"];
+    return { stop: follow(frontendOf($global, "messages").store, presentMessageBoard, next => {
+      // When a change succeeds, the form of the addition empties, or the editor closes. When it fails, they keep what the user typed.
+      // While a change is on its way, the fields are read-only: the user cannot type a text that the end of the change would remove.
+      if (pending && !next.pending && !next.additionError && !next.changeError) {
+        if (pending === "addition") text = "";
+        if (pending === "edition") editing = undefined;
+      }
+      pending = next.pending;
+      viewModel = next;
+    }) };
+  }
+  onDestroy() { this.stop(); }
+/>
+
+<form onSubmit(event) {
+  event.preventDefault();
+  frontendOf($global, "messages").events.publish(new MessageAdditionRequested(text));
+}>
+  <label for="new-message">New message</label>
+  <input id="new-message" name="text" value:=text required readonly=!!viewModel.pending aria-invalid=(viewModel.additionError ? "true" : undefined) aria-describedby=(viewModel.additionError ? "new-message-error" : undefined)/>
+  <button type="submit" disabled=!!viewModel.pending>Add</button>
+  <if=viewModel.additionError><p id="new-message-error" role="alert">${viewModel.additionError}</p></if>
+</form>
+
+<if=viewModel.changeError><p role="alert">${viewModel.changeError}</p></if>
+
+<await|initial|=loadMessageBoard(frontendOf($global, "messages"))>
+  <const/list=viewModel.list ?? initial>
+  <if=list.failure>
+    <p role="alert">The messages could not be loaded: ${list.failure}</p>
+  </if>
+  <else-if=list.messages.length>
+    <ul aria-label="Messages">
+      <for|message| of=list.messages>
+        <li>
+          <if=editing === message.id>
+            <form onSubmit(event) {
+              event.preventDefault();
+              frontendOf($global, "messages").events.publish(new MessageEditionRequested(message.id, draft));
+            }>
+              <label for=`edit-${message.id}`>Text of the message</label>
+              <input id=`edit-${message.id}` name="text" value:=draft required readonly=!!viewModel.pending/>
+              <button type="submit" disabled=!!viewModel.pending>Save</button>
+              <button type="button" onClick() { editing = undefined; }>Cancel</button>
+            </form>
+          </if>
+          <else>
+            <span>${message.text}</span>
+            <button type="button" disabled=!!viewModel.pending onClick() { editing = message.id; draft = message.text; }>Edit</button>
+            <button type="button" disabled=!!viewModel.pending onClick() {
+              frontendOf($global, "messages").events.publish(new MessageRemovalRequested(message.id));
+            }>Remove</button>
+          </else>
+        </li>
+      </for>
+    </ul>
+  </else-if>
+  <else>
+    <p>No message yet.</p>
+  </else>
+</await>
