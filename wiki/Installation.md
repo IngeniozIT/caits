@@ -14,7 +14,7 @@ You must also have read access to the GitHub repository `IngeniozIT/caits`. The 
 ## Make a new project
 
 ```sh
-npx github:IngeniozIT/caits#v0.2.0 init my-app
+npx github:IngeniozIT/caits#v0.3.0 init my-app
 cd my-app
 npm run check
 ```
@@ -28,12 +28,14 @@ The first line makes the project in the folder `my-app`:
 
 `npm run check` makes sure that the installation is correct: it builds the app, checks the types, the lint and the architecture, and runs the tests. Then `npm run dev` starts the app on http://localhost:3000. The page shows "My app".
 
+To start from a small app that shows each layer and each kind of test, add `--example`: `init my-app --example`. See [Example](Example.md).
+
 ## Add CAITS to a project
 
 In the folder of the project:
 
 ```sh
-npx github:IngeniozIT/caits#v0.2.0 init
+npx github:IngeniozIT/caits#v0.3.0 init
 ```
 
 - The command writes only the files that the project does not have. It does not change the other files.
@@ -63,6 +65,8 @@ my-app/
 │   ├── frontend/        the contexts of the frontend, one folder for each context
 │   └── routes/_frontend/+page.marko   the first page
 └── test/e2e/home.spec.ts              the first end-to-end test
+
+With --example, src/ and test/e2e/ hold the example app instead (see Example.md).
 ```
 
 Each file of `quality/` imports the defaults of CAITS from `quality/caits/`, then changes them. Your file has the last word. To change a rule or a setting, see [Quality](Quality.md).
@@ -72,7 +76,7 @@ Do not change the files of `quality/caits/`: `npx caits update` writes them agai
 ## Update CAITS
 
 ```sh
-npm install --save-dev github:IngeniozIT/caits#v0.3.0
+npm install --save-dev github:IngeniozIT/caits#v0.4.0
 npx caits update
 ```
 
@@ -116,5 +120,6 @@ The scripts are yours: you can change them. Some scripts run a command of CAITS:
 
 | Option | What it does |
 |---|---|
+| `--example` | The command writes a small app in place of the first page: a menu, and a page where the user adds, edits and removes messages. See [Example](Example.md). |
 | `--no-install` | The command writes the files, but installs nothing. Then run `npm install` and `npx playwright install chromium` yourself. |
-| `--caits <source>` | npm gets CAITS from this source, for example `git+file:///path/to/caits#v0.2.0`. By default, the source is the tag of the version of the command on GitHub. |
+| `--caits <source>` | npm gets CAITS from this source, for example `git+file:///path/to/caits#v0.3.0`. By default, the source is the tag of the version of the command on GitHub. |
