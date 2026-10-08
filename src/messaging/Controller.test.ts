@@ -64,7 +64,7 @@ describe("Controller", () => {
     const response = await controller.handle(ask("1"));
     expect(response.status).toBe(500);
     expect(response.headers.get("content-type")).toBe("application/problem+json");
-    expect(await response.json()).toEqual({ type: "urn:spike:problem:internal-server-error", title: "Internal server error", status: 500 });
+    expect(await response.json()).toEqual({ type: "urn:caits:problem:internal-server-error", title: "Internal server error", status: 500 });
     expect(reported).toEqual([new Error("disk full")]);
   });
 
@@ -82,12 +82,12 @@ describe("Controller", () => {
     const malformed = await controller.handle(ask("{not json"));
     expect(malformed.status).toBe(400);
     expect(malformed.headers.get("content-type")).toBe("application/problem+json");
-    expect(await malformed.json()).toEqual({ type: "urn:spike:problem:invalid-request-body", title: "Invalid request body", status: 400, detail: "Invalid JSON" });
+    expect(await malformed.json()).toEqual({ type: "urn:caits:problem:invalid-request-body", title: "Invalid request body", status: 400, detail: "Invalid JSON" });
 
     const refused = await controller.handle(ask('"abc"'));
     expect(refused.status).toBe(422);
     expect(refused.headers.get("content-type")).toBe("application/problem+json");
-    expect(await refused.json()).toEqual({ type: "urn:spike:problem:invalid-request-body", title: "Invalid request body", status: 422, detail: "Invalid body", issues: [{ message: "Expected a number" }] });
+    expect(await refused.json()).toEqual({ type: "urn:caits:problem:invalid-request-body", title: "Invalid request body", status: 422, detail: "Invalid body", issues: [{ message: "Expected a number" }] });
   });
 
   test("an error is reported to the console unless the controller is told where", async () => {
@@ -107,8 +107,8 @@ describe("Controller", () => {
     const response = problem(404, "not-found", "Not found", "Nothing here.", { issues: [1] });
     expect(response.status).toBe(404);
     expect(response.headers.get("content-type")).toBe("application/problem+json");
-    expect(await response.json()).toEqual({ type: "urn:spike:problem:not-found", title: "Not found", status: 404, detail: "Nothing here.", issues: [1] });
-    expect(await problem(500, "x", "X").json()).toEqual({ type: "urn:spike:problem:x", title: "X", status: 500 });
+    expect(await response.json()).toEqual({ type: "urn:caits:problem:not-found", title: "Not found", status: 404, detail: "Nothing here.", issues: [1] });
+    expect(await problem(500, "x", "X").json()).toEqual({ type: "urn:caits:problem:x", title: "X", status: 500 });
   });
 
   test("a refused request is a named error that carries what was wrong", () => {

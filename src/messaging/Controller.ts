@@ -20,7 +20,7 @@ export async function readBody(request: Request): Promise<unknown> {
   }
 }
 
-const problemType = (slug: string) => `urn:spike:problem:${slug}`;
+const problemType = (slug: string) => `urn:caits:problem:${slug}`;
 
 export function problem(status: number, slug: string, title: string, detail?: string, extensions: Record<string, unknown> = {}): Response {
   return new Response(JSON.stringify({ type: problemType(slug), title, status, detail, ...extensions }), {
