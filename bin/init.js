@@ -74,8 +74,7 @@ const PACKAGE = {
     "test:mutation": "stryker run quality/stryker.config.mjs && caits mutation-summary",
     "test:watch": "vitest --config quality/vite.config.ts",
     tdd: "vitest --config quality/vite.config.ts --changed",
-    check: "npm run typecheck && npm run lint && npm test && npm run test:e2e",
-    quality: "npm run check && npm run test:coverage"
+    check: "caits check typecheck lint:code lint:architecture test:coverage test:mutation test:e2e"
   }
 };
 

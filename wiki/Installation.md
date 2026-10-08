@@ -26,7 +26,7 @@ The first line makes the project in the folder `my-app`:
 3. It installs the packages, with `npm install`.
 4. It installs the browser of the end-to-end tests, with `npx playwright install chromium`.
 
-`npm run check` makes sure that the installation is correct: it builds the app, checks the types, the lint and the architecture, and runs the tests. Then `npm run dev` starts the app on http://localhost:3000. The page shows "My app".
+`npm run check` makes sure that the installation is correct: it builds the app, checks the types, the lint and the architecture, and runs the tests: the unit tests with the coverage, the mutation tests and the end-to-end tests. Then `npm run dev` starts the app on http://localhost:3000. The page shows "My app".
 
 To start from a small app that shows each layer and each kind of test, add `--example`: `init my-app --example`. See [Example](Example.md).
 
@@ -102,15 +102,15 @@ CAITS suggests a version for each tool: the version that CAITS uses itself. The 
 | `npm run dev` | Starts the app on http://localhost:3000 (or on the port `PORT`). The browser gets the changes on the port `HMR_PORT` (24678 when not set): to run two projects at the same time, give each its two ports. |
 | `npm run tdd` | Runs the tests of the files that you changed, again at each change. |
 | `npm test` | Runs all the unit tests. |
-| `npm run check` | Runs all the checks: types, lint, architecture, unit tests and end-to-end tests. Run it before a commit. |
-| `npm run quality` | Runs `check`, then the coverage, and writes the documentation of the tests (`reports/test-docs/index.html`). |
-| `npm run test:mutation` | Runs the mutation tests. |
+| `npm run check` | Runs all the checks at once: types, lint, architecture, unit tests with the coverage, mutation tests and end-to-end tests. It writes the reports: the coverage, the mutation score, and the documentation of the tests (`reports/test-docs/index.html`). Run it before a commit. |
+| `npm run test:mutation` | Runs the mutation tests alone. |
 
 The scripts are yours: you can change them. Some scripts run a command of CAITS:
 
 | Command | What it does |
 |---|---|
 | `caits dev` | Starts the development server with `quality/vite.config.ts`. The server writes its files in `node_modules/.caits/dev/`, not in `dist/`: `npm run check` can run while the server runs. When the configuration changes (`quality/vite.config.ts`, an `.env` file), the server starts again by itself. |
+| `caits check` | Runs the npm scripts that it gets, all at once, each with a build folder of its own. It prints one line for each check, then the output of the checks that fail, and only theirs. `npm run check` gives it the scripts of the checks: remove one, or add one of yours. |
 | `caits architecture` | Checks the rules of `quality/architecture.mjs` on `src/` and `test/`. |
 | `caits e2e` | Starts the server of `quality/playwright.config.ts`, then runs the end-to-end tests. |
 | `caits mutation-summary` | Gives the mutation score of each file. With `--survivors`, it also gives the mutants that survived. |

@@ -17,7 +17,10 @@ export async function run(args) {
   }
   symlinkSync(join(sandbox, "node_modules"), join(copy, "node_modules"));
 
-  const suite = spawn("npx", ["vitest", "run", "--config", "quality/vite.config.ts", "--reporter=dot", ...args], { cwd: copy, stdio: "inherit" });
+  // The suite builds in the dist/ of its copy: the build folder that `caits check` gives (CAITS_OUT_DIR) is in node_modules/, which the
+  // suites share.
+  const { CAITS_OUT_DIR: _, ...env } = process.env;
+  const suite = spawn("npx", ["vitest", "run", "--config", "quality/vite.config.ts", "--reporter=dot", ...args], { cwd: copy, env, stdio: "inherit" });
   // Stryker stops a suite that takes too long: the copy goes away with it.
   for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { suite.kill(signal); remove(); process.exit(143); });
   const status = await new Promise(resolve => suite.on("close", code => resolve(code ?? 1)));

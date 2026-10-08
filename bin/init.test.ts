@@ -51,7 +51,7 @@ describe("init", () => {
       name: "my-app",
       private: true,
       type: "module",
-      scripts: { check: "npm run typecheck && npm run lint && npm test && npm run test:e2e" },
+      scripts: { check: "caits check typecheck lint:code lint:architecture test:coverage test:mutation test:e2e" },
       dependencies: { marko: SUGGESTED.dependencies.marko },
       devDependencies: { "@ingeniozit/caits": "github:owner/caits#v9", sass: SUGGESTED.devDependencies.sass, typescript: SUGGESTED.devDependencies.typescript }
     });

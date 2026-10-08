@@ -20,13 +20,14 @@ const USAGE = `Usage: caits <command>
     --no-install       Write the files, but install nothing.
   update               Writes the defaults of the installed CAITS in ${DEFAULTS_FOLDER}/. Run it after you install another version.
   dev                  Starts the development server.
+  check <script>…      Runs the npm scripts of the checks at once. Shows the output of the checks that fail, and only theirs.
   architecture         Checks the rules of quality/architecture.mjs.
   e2e                  Runs the end-to-end tests on the production build.
   mutation-summary     Gives the mutation score of each file (--survivors: the mutants that survived).
   mutation-suite       The unit tests, as Stryker runs them for each mutant.`;
 
 /** The commands that run a tool of quality/: their code is in the folder quality/ of CAITS. */
-const TOOLS = new Set(["dev", "architecture", "e2e", "mutation-summary", "mutation-suite"]);
+const TOOLS = new Set(["dev", "check", "architecture", "e2e", "mutation-summary", "mutation-suite"]);
 
 /** @type {(count: number, noun: string) => string} */
 const count = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;

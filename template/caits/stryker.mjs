@@ -14,5 +14,7 @@ export default {
   concurrency: "100%",
   timeoutMS: 15000,
   coverageAnalysis: "off",
-  ignorePatterns: ["reports", "test-results", "playwright-report"]
+  // The builds stay out of the sandbox: each suite builds its own (`caits mutation-suite`), and under `caits check`, the end-to-end tests
+  // empty dist/ while Stryker copies the project.
+  ignorePatterns: ["reports", "test-results", "playwright-report", "dist", ".marko-run"]
 };

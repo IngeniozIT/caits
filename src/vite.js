@@ -1,5 +1,6 @@
 // JavaScript, not TypeScript: Node loads this file itself when Vite loads its configuration, and Node strips no types in node_modules,
 // where a project installs the kernel. TypeScript checks the types of the comments; vite.types.d.ts gives them to the projects.
+import { promises as files } from "node:fs";
 import MagicString from "magic-string";
 import { normalizePath, parseSync } from "vite";
 import { declareDependencies } from "./di/declareDependencies.js";
@@ -90,4 +91,32 @@ function contexts(source) {
     resolveId: id => Object.hasOwn(modules, id) ? `\0${id}` : undefined,
     load: id => id.startsWith("\0") && Object.hasOwn(modules, id.slice(1)) ? modules[id.slice(1)] : undefined
   };
+}
+
+/** The file of the types of the routes, which @marko/run writes in the folder .marko-run of the project. */
+const ROUTE_TYPES = /[\\/]\.marko-run[\\/]routes\.d\.ts$/;
+let routeTypesWrittenWhole = false;
+
+/**
+ * Makes @marko/run write the types of the routes (.marko-run/routes.d.ts) whole. It writes the file in place each time it reads the
+ * routes (a build, a start of Vitest or of the development server): while it writes, the file is empty. `caits check` runs the checks
+ * at once, and the lint and the type check read this file: they saw it empty when another check started. Now the text goes in a file of
+ * its own, which then takes the name of the file. @marko/run gives no other way: the plugin replaces the writeFile of node:fs, for this
+ * file only, as soon as the configuration of Vite makes the plugin, before the plugins write anything.
+ * @returns {Plugin}
+ */
+export function wholeRouteTypes() {
+  if (!routeTypesWrittenWhole) {
+    routeTypesWrittenWhole = true;
+    const { writeFile, rename } = files;
+    /** @type {typeof files.writeFile} */
+    const writeWhole = async (file, data, options) => {
+      if (typeof file !== "string" || !ROUTE_TYPES.test(file)) return writeFile(file, data, options);
+      const draft = `${file}.${process.pid}.tmp`;
+      await writeFile(draft, data, options);
+      await rename(draft, file);
+    };
+    files.writeFile = writeWhole;
+  }
+  return { name: "caits-whole-route-types" };
 }

@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import marko from "@marko/run/vite";
 import { defineConfig } from "vitest/config";
-import { kernel } from "@ingeniozit/caits/vite";
+import { kernel, wholeRouteTypes } from "@ingeniozit/caits/vite";
 
 /**
  * The folder of the stylesheets of the app. Sass looks in it after the folder of a stylesheet: each stylesheet of the routes loads the
@@ -11,7 +11,12 @@ import { kernel } from "@ingeniozit/caits/vite";
 const STYLE_FOLDER = fileURLToPath(new URL("../../src/routes/_frontend/style", import.meta.url));
 
 export default defineConfig({
-  plugins: [marko(), kernel()],
+  plugins: [wholeRouteTypes(), marko(), kernel()],
+  // `caits check` runs the checks at once: it gives each one a build folder of its own (CAITS_OUT_DIR), else they empty the folder of
+  // each other. Without it, the build goes in dist/, which `npm start` runs.
+  build: { outDir: process.env.CAITS_OUT_DIR || "dist" },
+  // The checks write their reports while the development server runs: a report is not a file of the app, and reloads no page.
+  server: { watch: { ignored: ["**/reports/**"] } },
   css: { preprocessorOptions: { scss: { loadPaths: [STYLE_FOLDER] } } },
   test: {
     include: ["src/**/*.test.ts", "test/**/*.test.ts", "quality/**/*.test.mjs"],

@@ -9,3 +9,6 @@ export type KernelOptions = {
 
 /** The plugins of the kernel, for Vite and Vitest: the dependencies of the classes, and the contexts of the project. */
 export declare function kernel(options?: KernelOptions): Plugin[];
+
+/** Makes @marko/run write the types of the routes whole: `caits check` runs the checks at once, and some of them read these types. */
+export declare function wholeRouteTypes(): Plugin;

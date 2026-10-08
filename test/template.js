@@ -1,6 +1,6 @@
 // `npm run test:template`: makes two projects with the CAITS of this folder, as a user does, one empty and one with the example, then
-// runs all the checks of each, and its development server. It installs the packages: it needs the network, or the npm cache. With
-// --keep, the projects stay in the temporary folder.
+// runs all the checks of each (`npm run check`, with the coverage and the mutation tests), and its development server. It installs the
+// packages: it needs the network, or the npm cache. With --keep, the projects stay in the temporary folder.
 // The example is the folder of its repository next to this one, ../caits-example, with its changes: clone IngeniozIT/caits-example there.
 import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -90,8 +90,7 @@ try {
   for (const { name, options } of projects) {
     const app = join(folder, name);
     run("node", [join(caits, "bin/caits.js"), "init", app, "--caits", `file:${tarball}`, ...options], folder);
-    run("npm", ["run", "quality"], app);
-    run("npm", ["run", "test:mutation"], app);
+    run("npm", ["run", "check"], app);
     await checkDevServer(app);
   }
   console.log(`\nThe projects that CAITS makes pass all their checks.`);

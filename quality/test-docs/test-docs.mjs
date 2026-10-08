@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { renderPage } from "./page.mjs";
 
@@ -20,10 +20,20 @@ export const fromProjectRoot = file => relative(projectRoot, file).split(sep).jo
 /** Removes the terminal colors from an error message. */
 export const withoutColors = text => text.replace(/\u001b\[[0-9;]*m/g, "");
 
+/**
+ * Writes a file of the documentation whole: `caits check` runs the unit and the end-to-end tests at once, and each run reads the file of
+ * the other one. The text goes in a file of its own, then takes the name of the file.
+ */
+function writeWhole(file, text) {
+  const draft = `${file}.${process.pid}.tmp`;
+  writeFileSync(draft, text);
+  renameSync(draft, file);
+}
+
 /** Keeps the tests of one run: `kind` is "unit" or "e2e"; each test is { file, describes, name, state, error? }. */
 export function saveRun(kind, tests) {
   mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, `${kind}.json`), JSON.stringify({ ranAt: new Date().toISOString(), tests }, null, 2));
+  writeWhole(join(directory, `${kind}.json`), JSON.stringify({ ranAt: new Date().toISOString(), tests }, null, 2));
 }
 
 /** Writes reports/test-docs/index.html from the last unit run and the last e2e run. */
@@ -33,7 +43,7 @@ export function writeTestDocs() {
   for (const run of runs) for (const test of run.result?.tests ?? []) add(root, test);
   mkdirSync(directory, { recursive: true });
   const page = join(directory, "index.html");
-  writeFileSync(page, renderPage({ generatedAt: new Date(), runs, root }));
+  writeWhole(page, renderPage({ generatedAt: new Date(), runs, root }));
   return page;
 }
 
