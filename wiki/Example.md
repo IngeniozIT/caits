@@ -7,7 +7,7 @@ The app is in the repository [IngeniozIT/caits-example](https://github.com/Ingen
 ## What the app does
 
 - A home page and a page Example. The two pages have the same menu, with the logo of CAITS, and its name in the colors of the logo. The menu marks the page that shows.
-- The home page starts the developer: the promise of the harness, its three guarantees (proven code, one shape, a lean output), the first steps, the commands of every day, and how to work with an AI agent, with a prompt to start with.
+- The home page starts the developer: the promise of the harness, the list of its checks and two more guarantees (no debates, no bloat), the first steps after the one that is done already, the commands of every day, and how to work with an AI agent, with a prompt to start with. A button copies each command, and the prompt.
 - A button of the menu switches between the light theme and the dark theme.
 - On the page Example, the user adds, edits and removes messages.
 - The backend keeps the messages in the file `tmp/messages.json` of the project (or in the folder `DATA_DIR`, when it is set).
@@ -40,6 +40,7 @@ An edition (`PUT /api/messages/{id}`) and a removal (`DELETE /api/messages/{id}`
 | `src/routes/_frontend/style/` | The stylesheet of the app, `app.scss`, and the partials that it loads: the values, the theme, the HTML elements, the parts of each page, and the menu. |
 | `src/routes/_frontend/component/Logo.marko` | The logo: an SVG, with the colors of the theme (`Logo.scss`). The menu and the home page show it. |
 | `src/routes/_frontend/component/ThemeSwitch.marko` | The button of the theme, in the menu, with its stylesheet. |
+| `src/routes/_frontend/component/CopyButton.marko` | The button that copies a command or the prompt of the home page, with its stylesheet. |
 | `src/routes/_frontend/+page.marko`, `messages/+page.marko` | The pages: the HTML of the page and the View tags, and next to each page its stylesheet (`home-page.scss`, `messages-page.scss`). A page has no test. |
 | `src/routes/_backend/api/messages/` | The API routes. A route only gives the request to a controller. |
 | `src/backend/messages/domain/` | An entity that refuses a text that is not valid, its errors, and a port with its contract. |
@@ -72,10 +73,11 @@ Each page, each component and the View import their own stylesheet, next to them
 
 | Stylesheet | The pages that load it | What it holds |
 |---|---|---|
-| `home-page.scss` | The home page | The logo on its glass and the name of CAITS, the cards of the guarantees and of the first steps, the terminal of the commands, and the prompt for an AI agent. |
+| `home-page.scss` | The home page | The logo on its glass and the name of CAITS, the cards of the guarantees with the list of the checks, the cards of the first steps, the terminal of the commands, and the prompt for an AI agent. |
 | `messages/messages-page.scss` | The page Example | The width of the page. |
 | `component/Logo.scss` | All the pages (the menu shows the logo) | The two colors of the logo, from the theme: `--caits-primary` and `--caits-accent`. |
 | `component/ThemeSwitch.scss` | All the pages | The button and its two icons: the moon in the light theme, the sun in the dark theme. |
+| `component/CopyButton.scss` | The home page | The small button of the terminals, in their colors. |
 | `MessageBoard.scss` | The page Example | The classes of the View: the form, the cards of the messages, the empty board. |
 
 Each class of a page, a component or a View starts with its name: `home-page__hero`, `theme-switch__moon`, `message-board__composer`. The build makes three CSS files: one for all the pages, one for the home page, and one for the page Example.
@@ -99,6 +101,7 @@ The menu marks the page that shows: the layout reads the route in `$global.route
 | Frontend presentation | `MessageBoard.test.ts` | The DTO that each user action sends, and the HTML for each state of the store (also `aria-busy`). |
 | Frontend infra | `*-messages-gateway.test.ts` | Each adapter runs the contract of its port. |
 | End-to-end | `test/e2e/layout.spec.ts` | The title of the home page, the menu and the page that it marks, and the switch of the theme, also after a reload. |
+| End-to-end | `test/e2e/home.spec.ts` | The buttons of the home page copy the prompt and a command. |
 | End-to-end | `test/e2e/messages.spec.ts` | A message added, edited and removed in a browser, and a refused message. |
 
 The example passes all the checks of a new project: the architecture rules, 100% coverage and 100% mutation score.
@@ -107,4 +110,4 @@ The backend has one context, thus no context map: its integration test is the on
 
 ## Remove the example
 
-Remove `src/backend/messages/`, `src/frontend/messages/`, `src/backend/context-map.integration.test.ts`, `src/routes/_backend/api/messages/`, `src/routes/_frontend/messages/` and `test/e2e/messages.spec.ts`. Then change the menu, the logo, the home page and the fonts (`@fontsource…` in `package.json`, and their `@use` in `app.scss`).
+Remove `src/backend/messages/`, `src/frontend/messages/`, `src/backend/context-map.integration.test.ts`, `src/routes/_backend/api/messages/`, `src/routes/_frontend/messages/` and `test/e2e/messages.spec.ts`. Then change the menu, the logo, the home page with its test (`test/e2e/home.spec.ts`), and the fonts (`@fontsource…` in `package.json`, and their `@use` in `app.scss`).
