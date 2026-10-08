@@ -1,0 +1,28 @@
+# AGENTS.md
+
+A CAITS project (Clean Architecture In TypeScript): a Marko app with a backend and a frontend. A harness checks every change.
+
+## Commands
+
+- `npm run check`: all the checks at once: types, lint, architecture rules, unit tests (100% coverage), mutation tests (100% score), end-to-end tests. The work is done only when it passes. It prints only the output of the checks that fail.
+- `npm run tdd`: the tests of the changed files, at each save.
+- `npm run lint:architecture`: the architecture rules alone, fast.
+- `npx caits mutation-summary --survivors`: the mutants that survived the last mutation run.
+
+## Where the code goes
+
+- The business lives in bounded contexts: `src/backend/<context>/` and `src/frontend/<context>/`, each with `domain/`, `application/`, `infra/`, `presentation/` and a `di.ts`. To add one, copy the shape of an existing one.
+- Domain: entities, value objects, errors, domain events, and ports (`domain/port/<port>/`), each with its contract (`<Port>.contract.ts`).
+- Application: one folder per use case, `command/<use-case>/` or `query/<use-case>/`, with its DTOs, its handler and its test.
+- Infra: the adapters of the ports, in `infra/<port>/`. The test of each adapter runs the contract of its port.
+- Presentation: the controllers in the backend; the views and the store in the frontend.
+- Dependencies point to the domain. A context imports its own files with `#context/`, never with `../`.
+- `src/routes/` holds the pages and the HTTP handlers: a page places views, a handler gives the request to a controller.
+
+## Rules
+
+- Write the test first. The coverage and the mutation score stay at 100%.
+- A check that fails names the file and the rule: fix the code, not the rule.
+- Do not change `quality/` (the rules, the thresholds, the configuration of the tools) without asking.
+
+Documentation: https://github.com/IngeniozIT/caits/wiki

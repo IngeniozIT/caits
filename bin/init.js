@@ -26,11 +26,13 @@ export const SOURCE = `github:IngeniozIT/caits#v${VERSION}`;
 /**
  * The files of the project: `init` writes them once, and never changes them after. The files of quality/ import the defaults of CAITS and
  * change them. Then comes the code: a first page (empty/), or the example.
- * npm leaves `.gitignore` out of a package: the template names the dotfiles without their dot.
+ * npm leaves `.gitignore` out of a package: the template names the dotfiles without their dot. It names AGENTS.md without its extension:
+ * an AI agent at work on CAITS would take it for the instructions of the folder template/project/.
  */
 const PROJECT_FILES = fileURLToPath(new URL("../template/project/", import.meta.url));
 const EMPTY = fileURLToPath(new URL("../template/empty/", import.meta.url));
-const DOTFILES = new Set(["gitignore", "nvmrc"]);
+/** The files of the template that the project names otherwise. */
+const NAMES = new Map([["gitignore", ".gitignore"], ["nvmrc", ".nvmrc"], ["AGENTS", "AGENTS.md"]]);
 
 /**
  * The example, a small app that shows each layer, is not in the package of CAITS: `init --example` gets it from its repository, at the
@@ -111,7 +113,7 @@ export function init(root, caits = SOURCE, { example } = {}) {
     const report = { written: [], kept: [], ignored: [], values: [] };
     for (const { folder, files } of [{ folder: PROJECT_FILES, files: filesOf(PROJECT_FILES) }, code]) {
       for (const file of files) {
-        const path = DOTFILES.has(file) ? `.${file}` : file;
+        const path = NAMES.get(file) ?? file;
         const target = join(root, path);
         if (path === ".gitignore" && existsSync(target)) report.ignored = addMissingLines(target, readFileSync(join(folder, file), "utf8"));
         else if (existsSync(target)) report.kept.push(path);

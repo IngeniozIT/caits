@@ -36,13 +36,13 @@ function newExample(page = "<h1>Example</h1>"): string {
 const DEFAULTS = ["architecture.mjs", "eslint.js", "marko-modules.d.ts", "playwright.ts", "stryker.mjs", "tsconfig.json", "tsconfig.mutation.json", "vite.ts"].map(file => `quality/caits/${file}`);
 
 describe("init", () => {
-  test("makes a project in a new folder: the files of the project, the defaults of CAITS, the folders of the contexts and package.json", () => {
+  test("makes a project in a new folder: the files of the project (AGENTS.md for the AI agents), the defaults of CAITS, the folders of the contexts and package.json", () => {
     const root = join(newFolder(), "My App");
 
     const report = init(root, "github:owner/caits#v9");
 
     expect(report.written).toEqual(expect.arrayContaining([
-      ".gitignore", ".nvmrc", "tsconfig.json", "quality/architecture.mjs", "quality/eslint.config.js", "quality/vite.config.ts", "src/routes/_frontend/+page.marko", "test/e2e/home.spec.ts", ...DEFAULTS
+      ".gitignore", ".nvmrc", "AGENTS.md", "tsconfig.json", "quality/architecture.mjs", "quality/eslint.config.js", "quality/vite.config.ts", "src/routes/_frontend/+page.marko", "test/e2e/home.spec.ts", ...DEFAULTS
     ]));
     expect(report).toMatchObject({ kept: [], ignored: [], values: [] });
     expect(existsSync(join(root, "src/backend"))).toBe(true);

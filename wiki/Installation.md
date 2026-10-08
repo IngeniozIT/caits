@@ -53,6 +53,7 @@ my-app/
 ├── tsconfig.json        extends quality/caits/tsconfig.json
 ├── .gitignore
 ├── .nvmrc
+├── AGENTS.md            what an AI agent needs to know: the commands, where the code goes, the rules
 ├── quality/             the configuration of the tools: these files are yours
 │   ├── architecture.mjs
 │   ├── eslint.config.js
