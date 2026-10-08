@@ -1,2 +1,3 @@
 - [Home](Home.md)
 - [Installation](Installation.md)
+- [Quality](Quality.md)

@@ -12,6 +12,7 @@ Your project holds the business code, in contexts. CAITS holds no business code.
 
 ## Pages
 
-1. [Installation](Installation.md): add CAITS to a new project.
+1. [Installation](Installation.md): make a new project with CAITS, add CAITS to a project, and update CAITS.
+2. [Quality](Quality.md): change the rules and the settings of the tools of your project.
 
 The next pages will tell how to add a context, a use case and a port.
