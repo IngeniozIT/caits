@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 const caits = join(import.meta.dirname, "..");
 const example = join(caits, "../caits-example");
-if (!existsSync(example)) throw new Error(`the example is not in ${example}: clone git@github.com:IngeniozIT/caits-example.git there`);
+if (!existsSync(example)) throw new Error(`the example is not in ${example}: clone https://github.com/IngeniozIT/caits-example.git there`);
 const folder = mkdtempSync(join(tmpdir(), "caits-template-"));
 const projects = [{ name: "empty", options: [] }, { name: "example", options: ["--example-source", example] }];
 

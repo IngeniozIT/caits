@@ -36,10 +36,11 @@ const NAMES = new Map([["gitignore", ".gitignore"], ["nvmrc", ".nvmrc"], ["AGENT
 
 /**
  * The example, a small app that shows each layer, is not in the package of CAITS: `init --example` gets it from its repository, at the
- * tag of this version, with git over SSH (as npm gets CAITS). A source is a git repository, with `#` and a tag or a branch, or a folder.
+ * tag of this version, with git over HTTPS: a public repository needs no SSH key. A source is a git repository, with `#` and a tag or a
+ * branch, or a folder.
  * `init` takes the files of its folders src/ and test/, and the packages of its package.json.
  */
-export const EXAMPLE_SOURCE = `git@github.com:IngeniozIT/caits-example.git#v${VERSION}`;
+export const EXAMPLE_SOURCE = `https://github.com/IngeniozIT/caits-example.git#v${VERSION}`;
 const EXAMPLE_FOLDERS = ["src", "test"];
 
 /** The defaults of CAITS: `init` and `update` write them in quality/caits/. CAITS owns this folder: `update` replaces it. */

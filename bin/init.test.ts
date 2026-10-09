@@ -101,7 +101,7 @@ describe("init", () => {
   });
 
   test("gets the example of the tag of this version of CAITS", () => {
-    expect(EXAMPLE_SOURCE).toBe(`git@github.com:IngeniozIT/caits-example.git#v${VERSION}`);
+    expect(EXAMPLE_SOURCE).toBe(`https://github.com/IngeniozIT/caits-example.git#v${VERSION}`);
   });
 
   test("adds CAITS to a project: keeps its files and its values, and tells which ones differ", () => {
