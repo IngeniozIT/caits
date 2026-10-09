@@ -1,6 +1,6 @@
 {
   "name": "@ingeniozit/caits",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "CAITS (Clean Architecture In TypeScript): the technical base of a Marko project with a backend and a frontend.",
   "repository": "github:IngeniozIT/caits",
   "license": "0BSD",
