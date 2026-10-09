@@ -3,6 +3,7 @@
   "version": "0.4.0",
   "description": "CAITS (Clean Architecture In TypeScript): the technical base of a Marko project with a backend and a frontend.",
   "repository": "github:IngeniozIT/caits",
+  "license": "0BSD",
   "private": true,
   "type": "module",
   "bin": {
