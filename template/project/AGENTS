@@ -25,4 +25,4 @@ A CAITS project (Clean Architecture In TypeScript): a Marko app with a backend a
 - A check that fails names the file and the rule: fix the code, not the rule.
 - Do not change `quality/` (the rules, the thresholds, the configuration of the tools) without asking.
 
-Documentation: https://github.com/IngeniozIT/caits/wiki
+Documentation: https://caits.dev/docs

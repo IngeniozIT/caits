@@ -1,5 +1,0 @@
-- [Home](Home.md)
-- [Installation](Installation.md)
-- [Example](Example.md)
-- [Quality](Quality.md)
-- [Styles](Styles.md)
