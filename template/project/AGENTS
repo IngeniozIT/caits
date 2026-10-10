@@ -5,7 +5,7 @@ A CAITS project (Clean Architecture In TypeScript): a Marko app with a backend a
 ## Commands
 
 - `npm run check`: all the checks at once: types, lint, architecture rules, unit tests (100% coverage), mutation tests (100% score), end-to-end tests. The work is done only when it passes. It prints only the output of the checks that fail.
-- `npm run tdd`: the unit tests, then at each save the tests of the changed files.
+- `npm run tdd`: the unit tests, then at each save the tests of the changed files. In an AI agent, Vitest runs them once and stops: run it again after a change.
 - `npm run lint:architecture`: the architecture rules alone, fast.
 - `npx caits mutation-summary --survivors`: the mutants that survived the last mutation run.
 

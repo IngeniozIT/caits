@@ -23,6 +23,7 @@ The changes of each version of CAITS, the newest first. A version is a git tag, 
 
 ### Command
 
+- The AGENTS.md of a new project says that, in an AI agent, `npm run tdd` runs the unit tests once and stops: Vitest does not watch there.
 - `caits --version` gives the version. `caits <command> --help` gives the usage.
 - An unknown command or option, an option without its value, or an argument too many gives a short message and ``Run `caits --help`.``, with the exit code 1, in place of a stack trace. So do `caits architecture` without quality/architecture.mjs and `caits mutation-summary` without a report.
 - `caits update` takes no argument: `caits update --help` no longer writes quality/caits/.
