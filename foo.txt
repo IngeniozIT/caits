@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Make the WSL fix recursive. The first version made /dev, /sys, /proc and /run private, but not the mounts
+# inside them that are mounts of their own, such as /run/user (so /run/user/1000 still disappeared when
+# Docker Desktop quit). --make-rprivate makes them private too, and so the mounts created later inside them.
+# Run it in a Debian terminal: sudo bash foo.txt
+set -euo pipefail
+
+cat > /etc/systemd/system/wsl-private-mounts.service <<'EOF'
+[Unit]
+Description=Make /dev, /sys, /proc and /run private, with all their mounts, so that Docker Desktop cannot unmount them
+DefaultDependencies=no
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/mount --make-rprivate /dev
+ExecStart=/usr/bin/mount --make-rprivate /sys
+ExecStart=/usr/bin/mount --make-rprivate /proc
+ExecStart=/usr/bin/mount --make-rprivate /run
+
+[Install]
+WantedBy=sysinit.target
+EOF
+systemctl daemon-reload
+systemctl restart wsl-private-mounts.service
+
+# Must show no line: the mounts under /dev, /sys, /proc and /run that are still shared.
+findmnt -l -n -o TARGET,PROPAGATION | awk '$2 ~ /shared/ && $1 ~ "^/(dev|sys|proc|run)(/|$)"'
+echo "Done: the mounts under /dev, /sys, /proc and /run are private."

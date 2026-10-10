@@ -8,10 +8,11 @@ export class PresentationScenario {
 
   constructor(private readonly app: PresentationApplication) {}
 
+  /** A request with a body sends it as JSON: a string is the text of the body as it is (`"{not json"`), any other value its JSON. */
   givenTheRequest(method: string, path: string, body?: unknown): this {
     this.request = new Request(`http://localhost${path}`, {
       method,
-      ...(body === undefined ? {} : typeof body === "string" ? { body } : { body: JSON.stringify(body), headers: { "content-type": "application/json" } })
+      ...(body === undefined ? {} : { body: typeof body === "string" ? body : JSON.stringify(body), headers: { "content-type": "application/json" } })
     });
     return this;
   }

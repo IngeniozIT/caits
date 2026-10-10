@@ -2,7 +2,7 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["node_modules/**", "reports/**", ".stryker-tmp/**", "quality/**", "template/**"] },
+  { ignores: ["node_modules/**", "reports/**", ".stryker-tmp/**", "template/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
@@ -18,8 +18,13 @@ export default tseslint.config(
   },
   {
     // TypeScript checks the names of the JavaScript files (checkJs), and knows the globals of Node.
-    files: ["**/*.js"],
+    files: ["**/*.js", "**/*.mjs"],
     rules: { "no-undef": "off" }
+  },
+  {
+    // The walk of the architecture check reads the nodes of two trees, of oxc and of Babel, which have no type (see Node in facts.mjs).
+    files: ["quality/architecture/facts.mjs"],
+    rules: { "@typescript-eslint/no-unsafe-member-access": "off", "@typescript-eslint/no-unsafe-assignment": "off", "@typescript-eslint/no-unsafe-argument": "off", "@typescript-eslint/no-unsafe-call": "off", "@typescript-eslint/no-unsafe-return": "off" }
   },
   {
     // The kernel imports the virtual modules of its Vite plugin: the files that do name the types of these modules with a reference,

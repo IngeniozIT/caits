@@ -1,8 +1,16 @@
 import { fromProjectRoot, saveRun, withoutColors, writeTestDocs } from "./test-docs.mjs";
 
-/** Keeps the tests of the Vitest run, then writes the test documentation page. */
+/** @import { Reporter, TestCase, TestModule } from "vitest/node" */
+/** @import { Test } from "./test-docs.mjs" */
+
+/**
+ * Keeps the tests of the Vitest run, then writes the test documentation page.
+ * @implements {Reporter}
+ */
 export default class TestDocsReporter {
+  /** @param {ReadonlyArray<TestModule>} testModules */
   onTestRunEnd(testModules) {
+    /** @type {Test[]} */
     const tests = testModules.flatMap(testModule => [...testModule.children.allTests()].map(testCase => {
       const result = testCase.result();
       const error = result.errors?.[0];
@@ -19,6 +27,10 @@ export default class TestDocsReporter {
   }
 }
 
+/**
+ * @param {TestCase} testCase
+ * @returns {string[]}
+ */
 function describesOf(testCase) {
   const names = [];
   for (let suite = testCase.parent; suite.type === "suite"; suite = suite.parent) names.unshift(suite.name);

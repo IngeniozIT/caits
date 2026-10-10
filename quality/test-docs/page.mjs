@@ -1,12 +1,20 @@
+/** @import { Describe, Element, Group, Item, Run, State, Test } from "./test-docs.mjs" */
+/** What holds tests: a group (with its sub-groups), an element, or a describe. @typedef {{ items?: Item[]; files?: Map<string, Describe>; elements?: Map<string, Element>; children?: Map<string, Group> }} Part */
+/** @typedef {Record<State, number> & { tests: number }} Count */
+
+/** @type {Record<State, string>} */
 const MARKS = { passed: "✓", failed: "✗", skipped: "○" };
 const ERROR_LENGTH = 3000;
 const NAV_DEPTH = 3;
 
-/** The whole page: the runs ({ kind, title, command, result }), a menu of the groups, and each test as one line of documentation. */
+/**
+ * The whole page: the runs ({ kind, title, command, result }), a menu of the groups, and each test as one line of documentation.
+ * @param {{ generatedAt: Date; runs: Run[]; root: Group }} page
+ */
 export function renderPage({ generatedAt, runs, root }) {
   const projects = sorted(root.children);
   const e2e = runs.find(run => run.kind === "e2e");
-  const missingE2e = e2e.result === null
+  const missingE2e = e2e?.result === null
     ? `<section class="project" id="end-to-end"><h2>End-to-end</h2><p class="note">Not run yet. Run <code>${e2e.command}</code>.</p></section>`
     : "";
   return `<!doctype html>
@@ -45,18 +53,25 @@ ${missingE2e}${projects.map(renderProject).join("")}
 `;
 }
 
+/** @param {Run} run */
 function runCard({ title, command, result }) {
   if (result === null) return `<div class="run"><div class="run-title">${title}</div><div class="muted">Not run yet. Run <code>${command}</code>.</div></div>`;
   const total = countOf(result.tests);
   return `<div class="run${total.failed ? " has-failures" : ""}"><div class="run-title">${title}</div><div class="muted">${date(new Date(result.ranAt))} · <code>${command}</code></div><div>${summary(total)}</div></div>`;
 }
 
+/**
+ * @param {Group} group
+ * @param {number} depth
+ * @returns {string}
+ */
 function navItem(group, depth) {
   const children = depth < NAV_DEPTH ? sorted(group.children) : [];
   const total = countOf(testsOf(group));
   return `<li><a href="#${group.id}"${total.failed ? ` class="has-failures"` : ""}>${escape(group.title)}</a> <span class="count">${total.tests}</span>${children.length ? `<ul>${children.map(child => navItem(child, depth + 1)).join("")}</ul>` : ""}</li>`;
 }
 
+/** @param {Group} project */
 function renderProject(project) {
   return `<section class="project" id="${project.id}" data-group>
 <h2>${escape(project.title)} ${badge(project)}</h2>
@@ -65,6 +80,11 @@ ${renderElements(project)}${sorted(project.children).map(child => renderGroup(ch
 `;
 }
 
+/**
+ * @param {Group} group
+ * @param {number} level
+ * @returns {string}
+ */
 function renderGroup(group, level) {
   return `<details open class="group level-${level}" id="${group.id}" data-group>
 <summary><h${level}>${escape(group.title)}</h${level}> ${badge(group)}</summary>
@@ -73,6 +93,7 @@ function renderGroup(group, level) {
 `;
 }
 
+/** @param {Group} group */
 function renderElements(group) {
   return [...group.elements.values()].sort((a, b) => a.title.localeCompare(b.title)).map(element => {
     const files = [...element.files.entries()].sort(([a], [b]) => a.localeCompare(b));
@@ -82,8 +103,16 @@ function renderElements(group) {
   }).join("");
 }
 
+/**
+ * @param {Item[]} items
+ * @param {string} file
+ * @param {string[]} context
+ * @returns {string}
+ */
 function renderItems(items, file, context) {
-  let html = "", tests = [];
+  /** @type {string[]} */
+  let tests = [];
+  let html = "";
   const flush = () => { if (tests.length) html += `<ul class="tests">${tests.join("")}</ul>`; tests = []; };
   for (const item of items) {
     if (item.test) { tests.push(renderTest(item.test, context)); continue; }
@@ -94,35 +123,52 @@ function renderItems(items, file, context) {
   return html;
 }
 
+/**
+ * @param {Test} test
+ * @param {string[]} context
+ */
 function renderTest(test, context) {
   const search = [...context, test.file, test.name].join(" ").toLowerCase();
   const error = test.error ? `<pre class="error">${escape(test.error.length > ERROR_LENGTH ? `${test.error.slice(0, ERROR_LENGTH)}…` : test.error)}</pre>` : "";
   return `<li class="test ${test.state}" data-search="${escape(search)}"><span class="mark" title="${test.state}">${MARKS[test.state]}</span><div><span class="name">${testName(test.name)}</span>${error}</div></li>`;
 }
 
-/** "Given …, When …, Then …" becomes three lines; any other name stays as it is. */
+/**
+ * "Given …, When …, Then …" becomes three lines; any other name stays as it is.
+ * @param {string} name
+ */
 function testName(name) {
   const steps = /^Given (.+?), When (.+?), Then (.+)$/s.exec(name);
   if (!steps) return escape(name);
   return `<span class="steps"><span><b>Given</b> ${escape(steps[1])}</span><span><b>When</b> ${escape(steps[2])}</span><span><b>Then</b> ${escape(steps[3])}</span></span>`;
 }
 
+/** @param {Part} group */
 function badge(group) {
   const total = countOf(testsOf(group));
   return `<span class="count">${total.tests} ${total.tests === 1 ? "test" : "tests"}${total.failed ? ` · <span class="failed-count">${total.failed} failed</span>` : ""}${total.skipped ? ` · ${total.skipped} skipped` : ""}</span>`;
 }
 
+/** @param {Count} total */
 function summary(total) {
   return [`${total.passed} passed`, total.failed ? `<span class="failed-count">${total.failed} failed</span>` : "", total.skipped ? `${total.skipped} skipped` : ""].filter(Boolean).join(" · ");
 }
 
+/**
+ * @param {Iterable<Test>} tests
+ * @returns {Count}
+ */
 function countOf(tests) {
   const total = { tests: 0, passed: 0, failed: 0, skipped: 0 };
   for (const test of tests) { total.tests++; total[test.state]++; }
   return total;
 }
 
-/** All the tests of a group (with its sub-groups), of an element, or of a describe. */
+/**
+ * All the tests of a group (with its sub-groups), of an element, or of a describe.
+ * @param {Part} part
+ * @returns {Generator<Test>}
+ */
 function* testsOf(part) {
   if (part.items) {
     for (const item of part.items) yield* item.test ? [item.test] : testsOf(item.describe);
@@ -133,9 +179,19 @@ function* testsOf(part) {
   for (const child of part.children?.values() ?? []) yield* testsOf(child);
 }
 
-const sorted = children => [...children.values()].sort((a, b) => a.order === undefined && b.order === undefined ? 0 : a.order - b.order || a.title.localeCompare(b.title));
+/**
+ * The groups by their order, then by their title. The groups without an order keep the order of the run.
+ * @type {(children: Map<string, Group>) => Group[]}
+ */
+const sorted = children => [...children.values()].sort((a, b) => {
+  if (a.order === undefined || b.order === undefined) return a.order === b.order ? 0 : a.title.localeCompare(b.title);
+  return a.order - b.order || a.title.localeCompare(b.title);
+});
+/** @type {(number: number) => string} */
 const pad = number => String(number).padStart(2, "0");
+/** @type {(at: Date) => string} */
 const date = at => `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+/** @type {(text: unknown) => string} */
 const escape = text => String(text).replace(/[&<>"']/g, character => `&#${character.charCodeAt(0)};`);
 
 const STYLE = `

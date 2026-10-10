@@ -1,11 +1,25 @@
 // `caits mutation-summary`: the mutation score of each file, from the report of Stryker. With --survivors, the mutants that survived.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
-export async function run(args) {
-  const report = JSON.parse(readFileSync("reports/mutation/mutation.json", "utf8"));
+/** The report that Stryker writes in JSON (quality/caits/stryker.mjs). */
+const REPORT = "reports/mutation/mutation.json";
+
+/** @typedef {{ status: string; mutatorName: string; replacement?: string; location: { start: { line: number } } }} Mutant */
+
+/** @type {(file: string) => unknown} */
+const readJson = file => JSON.parse(readFileSync(file, "utf8"));
+
+/**
+ * @param {string[]} args
+ * @returns {number}
+ */
+export function run(args) {
+  if (!existsSync(REPORT)) throw new Error(`${REPORT} is missing: run the mutation tests first (npm run test:mutation).`);
+  const report = /** @type {{ files: Record<string, { source: string; mutants: Mutant[] }> }} */ (readJson(REPORT));
   const rows = [];
   let killedTotal = 0, validTotal = 0;
   for (const [file, data] of Object.entries(report.files)) {
+    /** @type {(status: string) => number} */
     const count = status => data.mutants.filter(m => m.status === status).length;
     const killed = count("Killed") + count("Timeout");
     const survived = count("Survived");

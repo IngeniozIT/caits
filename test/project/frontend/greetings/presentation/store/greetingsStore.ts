@@ -1,5 +1,5 @@
-import type { StoreDefinition } from "@ingeniozit/caits/state/createStore";
-import type { Loadable } from "@ingeniozit/caits/state/Loadable";
+import type { StoreDefinition } from "caits/state/createStore";
+import type { Loadable } from "caits/state/Loadable";
 import type { GreetingsEvent } from "../../application/event/GreetingsEvent.js";
 import { ListGreetingsQuery } from "../../application/query/list-greetings/list-greetings.dto.js";
 

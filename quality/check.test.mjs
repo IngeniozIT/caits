@@ -1,10 +1,11 @@
+import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { check } from "./check.mjs";
 
-/** A check that waits for the file of another one: it passes only when the two run at the same time. */
+/** A check that waits for the file of another one: it passes only when the two run at the same time. @type {(other: string) => string} */
 const waitsFor = other => `import { existsSync, writeFileSync } from "node:fs";
 writeFileSync(process.argv[2], "");
 const end = Date.now() + 10_000;
@@ -17,7 +18,8 @@ const FILES = {
   "second.mjs": waitsFor("first.started"),
   "passes.mjs": "console.log(\"the output of a check that passes\");\n",
   "fails.mjs": "console.log(\"the output of a check that fails\");\nprocess.exit(1);\n",
-  "out-dir.mjs": "import { writeFileSync } from \"node:fs\";\nwriteFileSync(process.argv[2], process.env.CAITS_OUT_DIR ?? \"\");\n"
+  "out-dir.mjs": "import { writeFileSync } from \"node:fs\";\nwriteFileSync(process.argv[2], process.env.CAITS_OUT_DIR ?? \"\");\n",
+  "waits.mjs": "import { writeFileSync } from \"node:fs\";\nwriteFileSync(\"waits.pid\", String(process.pid));\nsetTimeout(() => {}, 60_000);\n"
 };
 
 const SCRIPTS = {
@@ -26,9 +28,11 @@ const SCRIPTS = {
   passes: "node passes.mjs",
   fails: "node fails.mjs",
   "test:unit": "node out-dir.mjs unit.out",
-  "test:e2e": "node out-dir.mjs e2e.out"
+  "test:e2e": "node out-dir.mjs e2e.out",
+  waits: "node waits.mjs"
 };
 
+/** @type {string[]} */
 const folders = [];
 afterEach(() => { for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true }); });
 
@@ -40,7 +44,12 @@ function newProject() {
   return root;
 }
 
+/**
+ * @param {string} root
+ * @param {string[]} scripts
+ */
 async function checkOf(root, scripts) {
+  /** @type {string[]} */
   const lines = [];
   const status = await check(root, scripts, line => lines.push(line));
   return { status, report: lines.join("\n") };
@@ -86,6 +95,22 @@ describe("caits check", () => {
     expect(readFileSync(join(root, "unit.out"), "utf8")).toBe(join("node_modules/.caits/check", "test-unit"));
     expect(readFileSync(join(root, "e2e.out"), "utf8")).toBe(join("node_modules/.caits/check", "test-e2e"));
   }, 30_000);
+
+  /** @type {[NodeJS.Signals, number][]} */
+  const signals = [["SIGINT", 130], ["SIGTERM", 143]];
+  test.for(signals)("when %s stops it, stops the checks, and exits with %i", { timeout: 30_000 }, async ([signal, code]) => {
+    const root = newProject();
+    const command = `import { check } from ${JSON.stringify(new URL("./check.mjs", import.meta.url).href)};\nawait check(${JSON.stringify(root)}, ["waits"], () => {});`;
+    const caits = spawn(process.execPath, ["--input-type=module", "-e", command], { stdio: "ignore" });
+    const exited = new Promise(resolve => caits.on("exit", resolve));
+    await expect.poll(() => existsSync(join(root, "waits.pid")), { timeout: 10_000 }).toBe(true);
+    const check = Number(readFileSync(join(root, "waits.pid"), "utf8"));
+
+    caits.kill(signal);
+
+    expect(await exited).toBe(code);
+    await expect.poll(() => { try { process.kill(check, 0); return "runs"; } catch { return "stopped"; } }).toBe("stopped");
+  });
 
   test("without a script, tells how to give them", async () => {
     const { status, report } = await checkOf(newProject(), []);

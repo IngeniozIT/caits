@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { readScss } from "./scss.mjs";
 
 const STYLESHEET = "src/routes/_frontend/style/app.scss";
+/** @type {(text: string, paths?: string[]) => string[]} */
 const importsOf = (text, paths = []) => readScss(STYLESHEET, text, new Set(paths)).imports;
 
 describe("the reading of a stylesheet", () => {

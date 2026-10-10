@@ -9,7 +9,7 @@ import { declareDependencies } from "./di/declareDependencies.js";
 /** @import { KernelOptions } from "./vite.types.js" */
 
 /** The name of this package: the app imports the tokens of the kernel (EventPublisher, DataDirectory, Fetcher…) with it. */
-const KERNEL = "@ingeniozit/caits";
+const KERNEL = "caits";
 
 /** The folder of the kernel: its classes and its tokens need the same code (a Controller gets its MessageBus, a token its name). */
 const OWN_FOLDER = `${normalizePath(import.meta.dirname)}/`;
@@ -51,8 +51,34 @@ function dependencies(source) {
 }
 
 /**
+ * The modules that find the contexts: each export of a module is a pattern of files, from the source folder, and whether it takes only
+ * the default export of each file. The test.di.ts files have modules of their own: the production code never reads them.
+ * @type {Record<string, [name: string, pattern: string, onlyDefault?: boolean][]>}
+ */
+const CONTEXT_MODULES = {
+  "virtual:kernel/backend": [
+    ["bindings", "backend/*/di.ts", true],
+    ["dtos", "backend/*/application/*/*/*.dto.ts"],
+    ["handlers", "backend/*/application/*/*/*.handler.ts"],
+    ["controllers", "backend/*/presentation/*/*.controller.ts"],
+    ["map", "backend/context-map.ts", true]
+  ],
+  "virtual:kernel/backend-test": [["bindings", "backend/*/test.di.ts", true]],
+  "virtual:kernel/frontend": [
+    ["bindings", "frontend/*/di.ts", true],
+    ["dtos", "frontend/*/application/*/*/*.dto.ts"],
+    ["handlers", "frontend/*/application/*/*/*.handler.ts"],
+    ["stores", "frontend/*/presentation/store/*Store.ts", true]
+  ],
+  "virtual:kernel/frontend-test": [["bindings", "frontend/*/test.di.ts", true]]
+};
+
+/**
  * The modules that find the contexts. Vite reads the patterns when it builds: they must be literal, and they start at the root of the
- * project, because a virtual module has no folder. The test.di.ts files have modules of their own: the production code never reads them.
+ * project, because a virtual module has no folder.
+ * Vite and Vitest follow the files that a module loaded, but not the new files that its patterns find: when a file of a pattern comes
+ * or goes, the plugin makes the environments load the module again. It also tells the watcher that the files that import the module
+ * changed: Vitest, in watch mode, then runs again the tests that use them (a new handler is found without a restart of Vitest).
  * @param {string} source
  * @returns {Plugin}
  */
@@ -60,24 +86,16 @@ function contexts(source) {
   /** @type {(pattern: string, onlyDefault?: boolean) => string} */
   const glob = (pattern, onlyDefault = false) =>
     `import.meta.glob(${JSON.stringify(`${source}/${pattern}`)}, { eager: true${onlyDefault ? `, import: "default"` : ""} })`;
-  /** @type {Record<string, string>} */
-  const modules = {
-    "virtual:kernel/backend": [
-      `export const bindings = ${glob("backend/*/di.ts", true)};`,
-      `export const dtos = ${glob("backend/*/application/*/*/*.dto.ts")};`,
-      `export const handlers = ${glob("backend/*/application/*/*/*.handler.ts")};`,
-      `export const controllers = ${glob("backend/*/presentation/*/*.controller.ts")};`,
-      `export const map = ${glob("backend/context-map.ts", true)};`
-    ].join("\n"),
-    "virtual:kernel/backend-test": `export const bindings = ${glob("backend/*/test.di.ts", true)};`,
-    "virtual:kernel/frontend": [
-      `export const bindings = ${glob("frontend/*/di.ts", true)};`,
-      `export const dtos = ${glob("frontend/*/application/*/*/*.dto.ts")};`,
-      `export const handlers = ${glob("frontend/*/application/*/*/*.handler.ts")};`,
-      `export const stores = ${glob("frontend/*/presentation/store/*Store.ts", true)};`
-    ].join("\n"),
-    "virtual:kernel/frontend-test": `export const bindings = ${glob("frontend/*/test.di.ts", true)};`
-  };
+  /** A pattern as a regular expression: `*` is a part of a name, without "/". */
+  const matcherOf = (/** @type {string} */ pattern) =>
+    new RegExp(`^${`${source}/${pattern}`.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", "[^/]*")}$`);
+  const modules = Object.entries(CONTEXT_MODULES).map(([id, exports]) => ({
+    id,
+    code: exports.map(([name, pattern, onlyDefault]) => `export const ${name} = ${glob(pattern, onlyDefault)};`).join("\n"),
+    matchers: exports.map(([, pattern]) => matcherOf(pattern))
+  }));
+  const moduleOf = (/** @type {string} */ id) => modules.find(module => module.id === id);
+  let root = "";
   return {
     name: "kernel-contexts",
     config: () => ({
@@ -88,8 +106,30 @@ function contexts(source) {
       // Vite reads an alias before the "imports" of the package.json of a context (#context), which cannot lead out of the context.
       resolve: { alias: [{ find: /^#shared\//, replacement: `${source}/backend/shared/` }] }
     }),
-    resolveId: id => Object.hasOwn(modules, id) ? `\0${id}` : undefined,
-    load: id => id.startsWith("\0") && Object.hasOwn(modules, id.slice(1)) ? modules[id.slice(1)] : undefined
+    configResolved: config => { root = config.root; },
+    configureServer: server => {
+      /** @param {string} file */
+      const reload = file => {
+        const path = normalizePath(file);
+        if (!path.startsWith(`${root}/`)) return;
+        const fromRoot = path.slice(root.length);
+        for (const { id } of modules.filter(({ matchers }) => matchers.some(matcher => matcher.test(fromRoot)))) {
+          /** @type {Set<string>} */
+          const importers = new Set();
+          for (const { moduleGraph } of Object.values(server.environments)) {
+            const loaded = moduleGraph.getModuleById(`\0${id}`);
+            if (!loaded) continue;
+            moduleGraph.invalidateModule(loaded);
+            for (const { file: importer } of loaded.importers) if (importer) importers.add(importer);
+          }
+          for (const importer of importers) server.watcher.emit("change", importer);
+        }
+      };
+      server.watcher.on("add", reload);
+      server.watcher.on("unlink", reload);
+    },
+    resolveId: id => moduleOf(id) ? `\0${id}` : undefined,
+    load: id => id.startsWith("\0") ? moduleOf(id.slice(1))?.code : undefined
   };
 }
 

@@ -1,0 +1,56 @@
+name: Release
+
+# A tag v<version> puts that version of CAITS on npm, as a staged version: it becomes public only when a maintainer approves it with
+# the second factor of the npm account (`npm stage list caits`, then `npm stage approve <id>`: README.md, "Release a version").
+# npm trusts this workflow (trusted publishing, with OIDC): the repository keeps no npm token.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      # The OIDC token that npm trusts in place of a token of the npm account.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later, and `npm stage` a recent npm 11.
+      - run: npm install --global npm@11
+
+      - name: The tag is the version of package.json
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME is not v$version, the version of package.json."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # The first version went to npm from the computer of the maintainer, before npm could trust this workflow.
+      - name: Skip a version that npm has already
+        id: npm
+        run: |
+          if npm view "caits@$VERSION" version > /dev/null 2>&1; then
+            echo "npm has caits $VERSION already: nothing to do."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.npm.outputs.published != 'true'
+        run: npm ci
+      - if: steps.npm.outputs.published != 'true'
+        run: npm run check
+      - if: steps.npm.outputs.published != 'true'
+        run: npm run test:mutation
+      - if: steps.npm.outputs.published != 'true'
+        name: Stage the version on npm
+        run: npm stage publish

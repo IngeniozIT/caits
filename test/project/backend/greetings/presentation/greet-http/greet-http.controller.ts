@@ -1,4 +1,4 @@
-import { Controller } from "@ingeniozit/caits/messaging/Controller";
+import { Controller } from "caits/messaging/Controller";
 import { GreetCommand, type GreetOutput } from "../../application/command/greet/greet.dto.js";
 
 export class GreetHttpController extends Controller<GreetCommand, GreetOutput> {

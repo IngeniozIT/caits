@@ -1,10 +1,27 @@
 {
-  "name": "@ingeniozit/caits",
+  "name": "caits",
   "version": "0.4.1",
   "description": "CAITS (Clean Architecture In TypeScript): the technical base of a Marko project with a backend and a frontend.",
-  "repository": "github:IngeniozIT/caits",
+  "keywords": [
+    "clean-architecture",
+    "typescript",
+    "marko",
+    "marko-run",
+    "vite",
+    "vitest",
+    "ddd",
+    "hexagonal-architecture",
+    "starter",
+    "template"
+  ],
+  "homepage": "https://caits.dev",
+  "bugs": "https://github.com/IngeniozIT/caits/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IngeniozIT/caits.git"
+  },
+  "author": "Ingenioz IT",
   "license": "0BSD",
-  "private": true,
   "type": "module",
   "bin": {
     "caits": "bin/caits.js"
@@ -27,7 +44,7 @@
     "!src/**/*.test.ts"
   ],
   "engines": {
-    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+    "node": "^22.18.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
     "typecheck": "tsc -p .",
@@ -43,12 +60,28 @@
     "magic-string": "^0.30.21"
   },
   "peerDependencies": {
-    "@marko/run": ">=0.11",
-    "vite": ">=8",
-    "vitest": ">=5"
+    "@eslint/js": "^10.0.1",
+    "@marko/compiler": "^5.42.10",
+    "@marko/run": "^0.11.13",
+    "@playwright/test": "^1.64.0",
+    "typescript-eslint": "^8.71.0",
+    "vite": "^8.0.0",
+    "vitest": "^5.0.0"
   },
   "peerDependenciesMeta": {
+    "@eslint/js": {
+      "optional": true
+    },
+    "@marko/compiler": {
+      "optional": true
+    },
     "@marko/run": {
+      "optional": true
+    },
+    "@playwright/test": {
+      "optional": true
+    },
+    "typescript-eslint": {
       "optional": true
     },
     "vite": {

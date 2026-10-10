@@ -37,7 +37,7 @@
   "timeoutMS": 15000,
   "coverageAnalysis": "off",
   "commandRunner": {
-    "command": "npx vitest run --reporter=dot --bail=1"
+    "command": "npx vitest run --reporter=dot --bail=1 src/"
   },
   "ignorePatterns": [
     "reports"

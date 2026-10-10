@@ -2,7 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** @typedef {{ [key: string]: unknown }} PackageJson */
@@ -17,11 +17,36 @@ import { fileURLToPath } from "node:url";
  */
 const readJson = file => JSON.parse(readFileSync(file, "utf8"));
 
+/**
+ * A package.json: its object, or an error that names the file and tells what is wrong.
+ * @param {string} file
+ * @returns {PackageJson}
+ */
+function readPackage(file) {
+  const text = readFileSync(file, "utf8");
+  /** @type {unknown} */
+  let project;
+  try {
+    project = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${file} is not valid JSON: ${/** @type {SyntaxError} */ (error).message}`, { cause: error });
+  }
+  if (typeof project !== "object" || project === null || Array.isArray(project)) throw new Error(`${file} is not valid: it must hold an object.`);
+  return /** @type {PackageJson} */ (project);
+}
+
+/**
+ * Why a command cannot start: most often, it is not installed.
+ * @param {string} command
+ * @param {Error} error
+ */
+const notStarted = (command, error) => "code" in error && error.code === "ENOENT" ? `${command} is not installed, or is not in the PATH` : `${command} cannot start: ${error.message}`;
+
 const OWN_PACKAGE = /** @type {{ version: string; devDependencies: Section }} */ (readJson(new URL("../package.json", import.meta.url)));
 
-/** The version of CAITS, and where npm gets it: the tag of this version, on GitHub. */
+/** The version of CAITS, and where npm gets it: the npm registry, this version or a later one with the same minor version. */
 export const VERSION = OWN_PACKAGE.version;
-export const SOURCE = `github:IngeniozIT/caits#v${VERSION}`;
+export const SOURCE = `^${VERSION}`;
 
 /**
  * The files of the project: `init` writes them once, and never changes them after. The files of quality/ import the defaults of CAITS and
@@ -73,10 +98,9 @@ const PACKAGE = {
     "test:contracts": "vitest run --config quality/vite.config.ts /infra/",
     "test:integration": "vitest run --config quality/vite.config.ts .integration.test.ts",
     "test:e2e": "caits e2e",
-    "test:coverage": "vitest run --config quality/vite.config.ts --coverage --reporter=default --reporter=@ingeniozit/caits/quality/test-docs/vitest-reporter",
+    "test:coverage": "vitest run --config quality/vite.config.ts --coverage --reporter=default --reporter=caits/quality/test-docs/vitest-reporter",
     "test:mutation": "stryker run quality/stryker.config.mjs && caits mutation-summary",
-    "test:watch": "vitest --config quality/vite.config.ts",
-    tdd: "vitest --config quality/vite.config.ts --changed",
+    tdd: "vitest --config quality/vite.config.ts",
     check: "caits check typecheck lint:code lint:architecture test:coverage test:mutation test:e2e"
   }
 };
@@ -100,13 +124,15 @@ const DEPENDENCY_KEYS = new Set(["dependencies", "devDependencies"]);
  * `example` (its source), the example; the defaults of CAITS (quality/caits/); the folders of the contexts; and adds to package.json what
  * CAITS needs (`caits` is where npm gets CAITS), and the packages of the example. A file or a value that the project has already stays as
  * it is: the report tells it. The lines of the template that .gitignore does not have go at its end. `init` installs nothing. When it
- * cannot get the example, it throws, and writes nothing.
+ * cannot read the package.json of the project, or get the example, it throws, and writes nothing.
  * @param {string} root
  * @param {string} [caits]
  * @param {{ example?: string }} [options]
  * @returns {Report}
  */
 export function init(root, caits = SOURCE, { example } = {}) {
+  const manifest = join(root, "package.json");
+  const project = existsSync(manifest) ? readPackage(manifest) : { name: nameOf(root), private: true };
   const code = example === undefined ? { folder: EMPTY, files: filesOf(EMPTY), packages: {}, remove() {} } : getExample(example);
   try {
     mkdirSync(root, { recursive: true });
@@ -127,7 +153,7 @@ export function init(root, caits = SOURCE, { example } = {}) {
     }
     report.written.push(...update(root));
     for (const side of ["backend", "frontend"]) mkdirSync(join(root, "src", side), { recursive: true });
-    report.values = addToPackage(join(root, "package.json"), caits, code.packages);
+    report.values = addToPackage(manifest, project, caits, code.packages);
     return report;
   } finally {
     code.remove();
@@ -136,7 +162,7 @@ export function init(root, caits = SOURCE, { example } = {}) {
 
 /**
  * The example of a source: its folder, the files of its folders src/ and test/, and the packages of its package.json. A git source is
- * cloned in a temporary folder: `remove` removes it.
+ * cloned in a temporary folder: `remove` removes it, and an example that CAITS cannot read removes it at once.
  * @param {string} source
  * @returns {{ folder: string; files: string[]; packages: Packages; remove: () => void }}
  */
@@ -144,15 +170,17 @@ function getExample(source) {
   const local = existsSync(source) && statSync(source).isDirectory();
   const folder = local ? source : cloneExample(source);
   const remove = () => { if (!local) rmSync(folder, { recursive: true, force: true }); };
-  if (!existsSync(join(folder, "src"))) {
+  try {
+    if (!existsSync(join(folder, "src"))) throw new Error(`${source} is not an example of CAITS: it has no folder src/.`);
+    const files = EXAMPLE_FOLDERS.filter(name => existsSync(join(folder, name))).flatMap(name => filesOf(join(folder, name)).map(file => `${name}/${file}`));
+    const manifest = join(folder, "package.json");
+    const project = existsSync(manifest) ? readPackage(manifest) : {};
+    const packages = { dependencies: sectionOf(project, "dependencies"), devDependencies: sectionOf(project, "devDependencies") };
+    return { folder, files, packages, remove };
+  } catch (error) {
     remove();
-    throw new Error(`${source} is not an example of CAITS: it has no folder src/.`);
+    throw error;
   }
-  const files = EXAMPLE_FOLDERS.filter(name => existsSync(join(folder, name))).flatMap(name => filesOf(join(folder, name)).map(file => `${name}/${file}`));
-  const manifest = join(folder, "package.json");
-  const project = existsSync(manifest) ? /** @type {PackageJson} */ (readJson(manifest)) : {};
-  const packages = { dependencies: sectionOf(project, "dependencies"), devDependencies: sectionOf(project, "devDependencies") };
-  return { folder, files, packages, remove };
 }
 
 /**
@@ -168,7 +196,8 @@ function cloneExample(source) {
   const result = spawnSync("git", args, { encoding: "utf8", stdio: ["ignore", "ignore", "pipe"] });
   if (result.status !== 0) {
     rmSync(folder, { recursive: true, force: true });
-    throw new Error(`git cannot get the example from ${source}:\n${result.stderr || result.error?.message}`);
+    if (result.error) throw new Error(`${notStarted("git", result.error)}: init needs it to get the example from ${source}.`);
+    throw new Error(`git cannot get the example from ${source}:\n${result.stderr}`);
   }
   return folder;
 }
@@ -208,7 +237,7 @@ export function defaultsVersions(root) {
 export function otherVersions(root) {
   const file = join(root, "package.json");
   if (!existsSync(file)) return [];
-  const project = /** @type {PackageJson} */ (readJson(file));
+  const project = readPackage(file);
   return Object.values(SUGGESTED).flatMap(section => Object.entries(section).flatMap(([name, caits]) => {
     const current = dependencyOf(project, name);
     return current !== undefined && current !== caits ? [{ key: name, project: current, caits }] : [];
@@ -231,18 +260,24 @@ export function install(root) {
  */
 function run(command, args, cwd) {
   console.log(`\n> ${[command, ...args].join(" ")}`);
-  return spawnSync(command, args, { cwd, stdio: "inherit" }).status === 0;
+  const result = spawnSync(command, args, { cwd, stdio: "inherit" });
+  if (result.error) console.error(`${notStarted(command, result.error)}.`);
+  return result.status === 0;
 }
 
 /**
- * The files of a folder and of its sub-folders, from the folder, with "/" on every system.
+ * The files of a folder and of its sub-folders, from the folder, with "/" on every system. A symbolic link stops the reading: a link in
+ * an example could copy any file of the computer into the project.
  * @param {string} folder
  * @returns {string[]}
  */
 function filesOf(folder) {
-  return readdirSync(folder, { recursive: true, encoding: "utf8" })
-    .filter(path => statSync(join(folder, path)).isFile())
-    .map(path => path.split(sep).join("/"))
+  return readdirSync(folder, { recursive: true, withFileTypes: true })
+    .filter(entry => {
+      if (entry.isSymbolicLink()) throw new Error(`${join(entry.parentPath, entry.name)} is a symbolic link: CAITS copies no link. Remove it, or put the file in its place.`);
+      return entry.isFile();
+    })
+    .map(entry => relative(folder, join(entry.parentPath, entry.name)).split(sep).join("/"))
     .sort();
 }
 
@@ -264,14 +299,14 @@ function addMissingLines(file, text) {
  * with the versions that CAITS suggests, then those of the example. A package is present when the dependencies or the devDependencies
  * name it. Gives the values that the project has already, and that differ.
  * @param {string} file
+ * @param {PackageJson} project the values of the file, or those of a new project
  * @param {string} caits
  * @param {Packages} example
  * @returns {KeptValue[]}
  */
-function addToPackage(file, caits, example) {
-  const project = existsSync(file) ? /** @type {PackageJson} */ (readJson(file)) : { name: nameOf(dirname(file)), private: true };
+function addToPackage(file, project, caits, example) {
   const dependencies = { ...SUGGESTED.dependencies, ...example.dependencies };
-  const devDependencies = { "@ingeniozit/caits": caits, ...SUGGESTED.devDependencies, ...example.devDependencies };
+  const devDependencies = { caits, ...SUGGESTED.devDependencies, ...example.devDependencies };
   const wanted = { ...PACKAGE, dependencies, devDependencies };
   /** @type {KeptValue[]} */
   const kept = [];

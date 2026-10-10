@@ -3,11 +3,12 @@
 // (dist/, .marko-run/): suites that run at the same time would fail at random, and a failed run counts as a killed mutant.
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { constants, tmpdir } from "node:os";
 import { join } from "node:path";
 
 const ENTRIES = ["src", "test", "quality", "dist", ".marko-run", "package.json", "tsconfig.json"];
 
+/** @param {string[]} args the options of Vitest, which Stryker gives */
 export async function run(args) {
   const sandbox = process.cwd();
   const copy = mkdtempSync(join(tmpdir(), "caits-mutation-"));
@@ -21,8 +22,9 @@ export async function run(args) {
   // suites share.
   const { CAITS_OUT_DIR: _, ...env } = process.env;
   const suite = spawn("npx", ["vitest", "run", "--config", "quality/vite.config.ts", "--reporter=dot", ...args], { cwd: copy, env, stdio: "inherit" });
-  // Stryker stops a suite that takes too long: the copy goes away with it.
-  for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { suite.kill(signal); remove(); process.exit(143); });
+  // Stryker stops a suite that takes too long: the copy goes away with it. The exit code tells the signal: 130 for SIGINT, 143 for SIGTERM.
+  for (const signal of /** @type {const} */ (["SIGINT", "SIGTERM"])) process.on(signal, () => { suite.kill(signal); remove(); process.exit(128 + constants.signals[signal]); });
+  /** @type {number} */
   const status = await new Promise(resolve => suite.on("close", code => resolve(code ?? 1)));
   remove();
   return status;

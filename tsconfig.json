@@ -1,5 +1,5 @@
 {
-  "include": ["bin/**/*", "src/**/*", "test/**/*", "vitest.config.ts", "eslint.config.js"],
+  "include": ["bin/**/*", "quality/**/*", "src/**/*", "test/**/*", "vitest.config.ts", "eslint.config.js"],
   "compilerOptions": {
     "allowJs": true,
     "allowSyntheticDefaultImports": true,
@@ -10,7 +10,7 @@
     "noEmit": true,
     "noImplicitOverride": true,
     "noUnusedLocals": true,
-    "paths": { "@ingeniozit/caits/*": ["./src/*"] },
+    "paths": { "caits/*": ["./src/*"] },
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,

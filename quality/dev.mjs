@@ -8,6 +8,7 @@
 // @marko/run writes the entry files of the server in the build folder. `npm run build` (`npm run check` runs it) empties dist/: the
 // server writes them in a folder of its own, else it fails at the next change of a file. @marko/vite refuses an entry file whose path
 // starts with a dot: the folder is in node_modules/, as the cache of Vite.
+import { existsSync } from "node:fs";
 import adapter from "@marko/run/adapter";
 import { loadConfigFromFile } from "vite";
 
@@ -21,13 +22,19 @@ export const OUT_DIR = "node_modules/.caits/dev";
  * - when the configuration does not load (an error in the file), the server that runs stays: Vite asks again at the next change;
  * - a change that comes during a restart makes one more restart, after it: the new server reads the configuration after the change;
  * - when the new server cannot start, the command stops, and tells why.
+ * @param {string[]} args the arguments of the server
  */
 export async function run(args) {
+  if (!existsSync(VITE_CONFIG)) throw new Error(`${VITE_CONFIG} is missing: it gives the configuration of Vite. Run \`npx caits init .\` to write it.`);
   const port = Number(process.env.PORT ?? 3000);
   const hmrPort = Number(process.env.HMR_PORT ?? 24678);
   const marko = adapter();
-  const entry = await marko.getEntryFile();
-  /** @type {{ close(): Promise<void> }} the server of @marko/run */
+  // The adapter of Node, which @marko/run gives, has the two methods.
+  const getEntryFile = marko.getEntryFile?.bind(marko);
+  const startDev = marko.startDev?.bind(marko);
+  if (!getEntryFile || !startDev) throw new Error(`The adapter ${marko.name} of @marko/run cannot start a development server.`);
+  const entry = await getEntryFile();
+  /** @type {import("@marko/run/adapter").SpawnedServer} the server of @marko/run */
   let running;
   /** @type {import("vite").ViteDevServer} its Vite server */
   let vite;
@@ -36,7 +43,7 @@ export async function run(args) {
   let changedAgain = false;
 
   const start = async () => {
-    running = await marko.startDev({
+    running = await startDev({
       entry,
       config: {
         root: process.cwd(),
@@ -88,7 +95,7 @@ async function configurationLoads() {
     await loadConfigFromFile({ command: "serve", mode: "development" }, VITE_CONFIG, process.cwd(), "silent");
     return true;
   } catch (error) {
-    console.error(`\n${VITE_CONFIG} does not load: the server keeps the configuration that it has.\n${error instanceof Error ? error.message : error}`);
+    console.error(`\n${VITE_CONFIG} does not load: the server keeps the configuration that it has.\n${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { Controller, InvalidInputError, MalformedBodyError, problem, readBody } from "./Controller.js";
+import { BodyTooLargeError, Controller, InvalidInputError, MalformedBodyError, MAX_BODY_SIZE, problem, readBody, UnsupportedMediaTypeError } from "./Controller.js";
 import { Input } from "./Input.js";
 import type { MessageBus } from "./MessageBus.js";
 
@@ -26,7 +26,7 @@ class DoublingController extends Controller<Double, number> {
   }
 }
 
-const ask = (text: string) => new Request("http://localhost/", { method: "POST", body: text });
+const ask = (text: string) => new Request("http://localhost/", { method: "POST", body: text, headers: { "content-type": "application/json" } });
 
 function busDoing(execute: (dto: Double) => Promise<number>) {
   const received: Double[] = [];
@@ -68,7 +68,7 @@ describe("Controller", () => {
     expect(reported).toEqual([new Error("disk full")]);
   });
 
-  test("a body that is not JSON is a 400 problem, and a body that toDto refuses is a 422 problem with its issues", async () => {
+  describe("the problems of the body", () => {
     class Reading extends Controller<Double, number> {
       protected async toDto(request: Request): Promise<Double> {
         const body = await readBody(request);
@@ -79,15 +79,33 @@ describe("Controller", () => {
     }
     const controller = new Reading({ send: () => Promise.reject(new Error("never called")) });
 
-    const malformed = await controller.handle(ask("{not json"));
-    expect(malformed.status).toBe(400);
-    expect(malformed.headers.get("content-type")).toBe("application/problem+json");
-    expect(await malformed.json()).toEqual({ type: "urn:caits:problem:invalid-request-body", title: "Invalid request body", status: 400, detail: "Invalid JSON" });
+    test("a body that is not JSON is a 400 problem, and a body that toDto refuses is a 422 problem with its issues", async () => {
+      const malformed = await controller.handle(ask("{not json"));
+      expect(malformed.status).toBe(400);
+      expect(malformed.headers.get("content-type")).toBe("application/problem+json");
+      expect(await malformed.json()).toEqual({ type: "urn:caits:problem:invalid-request-body", title: "Invalid request body", status: 400, detail: "Invalid JSON" });
 
-    const refused = await controller.handle(ask('"abc"'));
-    expect(refused.status).toBe(422);
-    expect(refused.headers.get("content-type")).toBe("application/problem+json");
-    expect(await refused.json()).toEqual({ type: "urn:caits:problem:invalid-request-body", title: "Invalid request body", status: 422, detail: "Invalid body", issues: [{ message: "Expected a number" }] });
+      const refused = await controller.handle(ask('"abc"'));
+      expect(refused.status).toBe(422);
+      expect(refused.headers.get("content-type")).toBe("application/problem+json");
+      expect(await refused.json()).toEqual({ type: "urn:caits:problem:invalid-request-body", title: "Invalid request body", status: 422, detail: "Invalid body", issues: [{ message: "Expected a number" }] });
+    });
+
+    test("a body that does not say it is JSON is a 415 problem", async () => {
+      const response = await controller.handle(new Request("http://localhost/", { method: "POST", body: "21" }));
+
+      expect(response.status).toBe(415);
+      expect(response.headers.get("content-type")).toBe("application/problem+json");
+      expect(await response.json()).toEqual({ type: "urn:caits:problem:unsupported-media-type", title: "Unsupported media type", status: 415, detail: "The content type must be application/json" });
+    });
+
+    test("a body larger than 1 MB is a 413 problem", async () => {
+      const response = await controller.handle(ask(" ".repeat(MAX_BODY_SIZE) + "1"));
+
+      expect(response.status).toBe(413);
+      expect(response.headers.get("content-type")).toBe("application/problem+json");
+      expect(await response.json()).toEqual({ type: "urn:caits:problem:request-body-too-large", title: "Request body too large", status: 413, detail: "The body is larger than 1048576 bytes" });
+    });
   });
 
   test("an error is reported to the console unless the controller is told where", async () => {
@@ -118,15 +136,77 @@ describe("Controller", () => {
   });
 
   describe("reading the body", () => {
-    const post = (body: BodyInit, contentType?: string) => new Request("http://localhost/", { method: "POST", body, ...(contentType ? { headers: { "content-type": contentType } } : {}) });
+    const post = (body: BodyInit | null, contentType?: string) => new Request("http://localhost/", { method: "POST", body, ...(contentType ? { headers: { "content-type": contentType } } : {}) });
 
     test("reads the JSON of the body", async () => {
       expect(await readBody(post(JSON.stringify({ text: "à relire" }), "application/json"))).toEqual({ text: "à relire" });
+      expect(await readBody(post("null", "application/json"))).toBeNull();
     });
 
-    test("reads JSON whatever the request says its content is, as a client that forgot to say", async () => {
-      expect(await readBody(post('{"a":1}'))).toEqual({ a: 1 });
-      expect(await readBody(post("null"))).toBeNull();
+    test.for([
+      "application/json",
+      "application/json; charset=utf-8",
+      "application/json ; charset=utf-8",
+      "Application/JSON;charset=UTF-8",
+      "application/merge-patch+json",
+      "application/vnd.api+json; ext=bulk",
+      "text/x.custom+json"
+    ])("reads a body whose content type is JSON: %s", async contentType => {
+      expect(await readBody(post('{"a":1}', contentType))).toEqual({ a: 1 });
+    });
+
+    test.for([
+      ["no content type", undefined],
+      ["text/plain, which a form of another site sends without asking the server first", "text/plain;charset=UTF-8"],
+      ["text/plain and a parameter that names JSON", "text/plain; a=application/json"],
+      ["text/plain and a parameter that ends with +json", "text/plain;x+json"],
+      ["a form", "application/x-www-form-urlencoded"],
+      ["a type that starts with the word json", "application/jsonx"],
+      ["a type with json before its end", "application/json+xml"],
+      ["a type without a subtype", "+json"],
+      ["a space in the type", "my app/x+json"],
+      ["a space in the subtype", "application/x y+json"],
+      ["two slashes", "application/x/y+json"]
+    ])("refuses a body with %s: the request must say that it sends JSON", async ([, contentType]) => {
+      const attempt = readBody(post('{"a":1}', contentType));
+      await expect(attempt).rejects.toBeInstanceOf(UnsupportedMediaTypeError);
+      await expect(attempt).rejects.toBeInstanceOf(InvalidInputError);
+      await expect(attempt).rejects.toThrow("The content type must be application/json");
+    });
+
+    test("refuses a body larger than 1 MB, and does not read the rest of it", async () => {
+      expect(MAX_BODY_SIZE).toBe(1024 * 1024);
+      let given = 0;
+      const chunk = new Uint8Array(64 * 1024).fill(32);
+      const body = new ReadableStream<Uint8Array>({ pull(controller) { given += chunk.byteLength; controller.enqueue(chunk); } });
+      const request = new Request("http://localhost/", { method: "POST", body, headers: { "content-type": "application/json" }, duplex: "half" } as RequestInit);
+
+      const attempt = readBody(request);
+
+      await expect(attempt).rejects.toBeInstanceOf(BodyTooLargeError);
+      await expect(attempt).rejects.toBeInstanceOf(InvalidInputError);
+      await expect(attempt).rejects.toThrow("The body is larger than 1048576 bytes");
+      expect(given).toBeLessThan(2 * MAX_BODY_SIZE);
+    });
+
+    test("reads a body of 1 MB exactly, or of the size that the controller gives", async () => {
+      const json = (size: number) => `"${"a".repeat(size - 2)}"`;
+      expect(await readBody(post(json(MAX_BODY_SIZE), "application/json"))).toHaveLength(MAX_BODY_SIZE - 2);
+      expect(await readBody(post(json(10), "application/json"), 10)).toBe("aaaaaaaa");
+      await expect(readBody(post(json(11), "application/json"), 10)).rejects.toThrow("The body is larger than 10 bytes");
+    });
+
+    test("reads a character whose bytes come in two chunks, and refuses a body that stops inside a character", async () => {
+      const streamOf = (...chunks: number[][]) => new Request("http://localhost/", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: new ReadableStream<Uint8Array>({ start(controller) { for (const chunk of chunks) controller.enqueue(new Uint8Array(chunk)); controller.close(); } }),
+        duplex: "half"
+      } as RequestInit);
+      const [quote, firstByteOfE, secondByteOfE] = [0x22, 0xc3, 0xa9];
+
+      expect(await readBody(streamOf([quote, firstByteOfE], [secondByteOfE, quote]))).toBe("é");
+      await expect(readBody(streamOf([0x31, firstByteOfE]))).rejects.toThrow("Invalid JSON");
     });
 
     test("leaves the request readable", async () => {
@@ -136,12 +216,11 @@ describe("Controller", () => {
     });
 
     test("refuses a body that is not JSON, with an error that says so", async () => {
-      const attempt = readBody(post("{not json"));
+      const attempt = readBody(post("{not json", "application/json"));
       await expect(attempt).rejects.toBeInstanceOf(MalformedBodyError);
       await expect(attempt).rejects.toBeInstanceOf(InvalidInputError);
       await expect(attempt).rejects.toThrow("Invalid JSON");
-      await expect(readBody(new Request("http://localhost/", { method: "POST" }))).rejects.toThrow("Invalid JSON");
-      await expect(readBody(post(new URLSearchParams({ a: "1" })))).rejects.toThrow("Invalid JSON");
+      await expect(readBody(post(null, "application/json"))).rejects.toThrow("Invalid JSON");
     });
   });
 

@@ -5,9 +5,13 @@
 // build in dist/ all the same: `npm start` runs dist/index.mjs.
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { constants } from "node:os";
 import { join } from "node:path";
 
 export const OUT_DIRS = "node_modules/.caits/check";
+
+/** @type {(file: string) => unknown} */
+const readJson = file => JSON.parse(readFileSync(file, "utf8"));
 
 /** @param {number} milliseconds */
 const durationOf = milliseconds => {
@@ -15,6 +19,7 @@ const durationOf = milliseconds => {
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, "0")}s`;
 };
 
+/** @param {string[]} args the npm scripts of the checks */
 export async function run(args) {
   return check(process.cwd(), args);
 }
@@ -35,7 +40,7 @@ export async function check(root, scripts, print = line => console.log(line)) {
   }
   // npm says nothing of a missing script when it runs silent: the command names them, and runs nothing.
   const manifest = join(root, "package.json");
-  const known = existsSync(manifest) ? JSON.parse(readFileSync(manifest, "utf8")).scripts ?? {} : {};
+  const known = existsSync(manifest) ? /** @type {{ scripts?: Record<string, string> }} */ (readJson(manifest)).scripts ?? {} : {};
   const missing = scripts.filter(script => !Object.hasOwn(known, script));
   if (missing.length > 0) {
     print(`package.json has no script ${missing.join(", ")}.`);
@@ -47,7 +52,8 @@ export async function check(root, scripts, print = line => console.log(line)) {
 
   const steps = scripts.map(script => start(root, script));
   const stop = () => { for (const step of steps) step.stop(); };
-  const interrupt = () => { stop(); process.exit(130); };
+  /** @param {NodeJS.Signals} signal Ctrl+C (SIGINT) exits with 130, SIGTERM with 143, as a shell tells a command that a signal stops. */
+  const interrupt = signal => { stop(); process.exit(128 + constants.signals[signal]); };
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
   try {

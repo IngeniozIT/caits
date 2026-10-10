@@ -6,7 +6,7 @@ dist/
 .marko-run/
 tsconfig.tsbuildinfo
 
-# Runtime data (file persistence adapter)
+# Data that the app writes while it runs
 tmp/
 
 # Test, coverage and mutation output

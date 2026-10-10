@@ -1,4 +1,6 @@
-import { adapterOf, frontendsOf, importedModules, isCore, isMarko, isNode, isPackage, kebab, kernelPathOf, locate, portOf, typeOfEvent } from "@ingeniozit/caits/quality/architecture";
+import { adapterOf, frontendsOf, importedModules, isCore, isMarko, isNode, isPackage, kebab, kernelPathOf, locate, portOf, typeOfEvent } from "caits/quality/architecture";
+
+/** @import { Rule } from "caits/quality/architecture" */
 
 /**
  * The rules of the architecture, by layer. Each rule has a name and a description, reads one kind of thing (`on`), and checks it:
@@ -7,9 +9,10 @@ import { adapterOf, frontendsOf, importedModules, isCore, isMarko, isNode, isPac
  *   The rules on imports do not overlap: an import breaks two of them only when it has two problems.
  * - on "file": each file, with the project ({ root, files, paths }); `production: true` leaves the test code aside.
  * - on "project": the project once; the check gives a list of { file, message }.
+ * @type {Rule[]}
  */
 export const rules = [
-  // Kernel: the package @ingeniozit/caits builds the containers and the controllers
+  // Kernel: the package caits builds the containers and the controllers
 
   {
     name: "container-built-by-kernel",
@@ -23,7 +26,7 @@ export const rules = [
     description: "Only the kernel makes a controller, with its dependencies. The other code asks the kernel for a controller, or sends a request through the router.",
     on: "file",
     check: ({ constructed }) => {
-      const controller = constructed.find(name => /^[A-Z]\w*Controller$/.test(name));
+      const controller = constructed.find(name => name !== null && /^[A-Z]\w*Controller$/.test(name));
       return controller && `only the kernel builds a controller: ask the kernel for it, or send a request through the router (new ${controller}(…))`;
     }
   },
@@ -43,6 +46,7 @@ export const rules = [
     description: "A domain file exports one name only. A port file exports its interface and its token with the same name.",
     on: "file",
     declarations: new Set(["class", "interface", "type", "const", "function", "enum"]),
+    /** @this {{ declarations: Set<string> }} */
     check({ path, exports }) {
       if (!/^src\/(backend|frontend)\/[^/]+\/domain\/.+\.ts$/.test(path) || path.endsWith(".test.ts")) return;
       const names = exports.filter(({ kind }) => this.declarations.has(kind)).map(({ name }) => name);
@@ -61,7 +65,7 @@ export const rules = [
     description: "A domain error is an exported class …Error that extends Error.",
     on: "file",
     check: ({ path, classes }) => /^src\/(backend|frontend)\/[^/]+\/domain\/error\/[A-Z]\w*Error\.ts$/.test(path)
-      && !classes.some(({ exported, name, extends: parent }) => exported && /^\w+Error$/.test(name) && parent === "Error")
+      && !classes.some(({ exported, name, extends: parent }) => exported && name !== null && /^\w+Error$/.test(name) && parent === "Error")
       && "an error is a class that extends Error"
   },
   {
@@ -106,7 +110,7 @@ export const rules = [
   },
   {
     name: "domain-uses-kernel-primitives",
-    description: "The domain imports only the files at the root of the kernel (@ingeniozit/caits/Result, /Token, /DomainEvent). It does not import the buses, the store or the DI of the kernel.",
+    description: "The domain imports only the files at the root of the kernel (caits/Result, /Token, /DomainEvent). It does not import the buses, the store or the DI of the kernel.",
     on: "import",
     check: ({ from, specifier }) => from.layer === "domain" && kernelPathOf(specifier)?.includes("/")
       && "the domain imports only the kernel's domain primitives, never buses or the store"
@@ -132,7 +136,7 @@ export const rules = [
     name: "handler-answers-output",
     description: "A backend handler gives its result as an Output DTO: it makes a `new …Output(…)`.",
     on: "file",
-    check: ({ path, constructed }) => /^src\/backend\/[^/]+\/application\/.+\.handler\.ts$/.test(path) && !constructed.some(name => /^\w+Output$/.test(name))
+    check: ({ path, constructed }) => /^src\/backend\/[^/]+\/application\/.+\.handler\.ts$/.test(path) && !constructed.some(name => name !== null && /^\w+Output$/.test(name))
       && "a handler answers with `new SomethingOutput(…)`"
   },
   {
@@ -161,7 +165,7 @@ export const rules = [
     check: ({ path, classes }) => {
       const [, context, event] = /^src\/frontend\/([^/]+)\/application\/event\/(\w+)\.ts$/.exec(path) ?? [];
       const declared = event && classes.find(({ exported, name }) => exported && name === event);
-      if (!declared) return;
+      if (!context || !declared) return;
       const type = typeOfEvent(context, event);
       const property = declared.properties.find(({ name }) => name === "type");
       return (!property?.readonly || !property.asConst || property.value !== type) && `the type of ${event} is "${type}": its context, then its name without the context`;
@@ -182,7 +186,7 @@ export const rules = [
     description: "A controller is an exported class …Controller that extends the Controller of the kernel.",
     on: "file",
     check: ({ path, classes }) => /^src\/backend\/[^/]+\/presentation\/.+\.controller\.ts$/.test(path)
-      && !classes.some(({ exported, name, extends: parent }) => exported && /^\w+Controller$/.test(name) && parent === "Controller")
+      && !classes.some(({ exported, name, extends: parent }) => exported && name !== null && /^\w+Controller$/.test(name) && parent === "Controller")
       && "a controller is an exported class …Controller that extends the kernel's Controller"
   },
   {
@@ -281,6 +285,7 @@ export const rules = [
     description: "A di.ts or a test.di.ts has one export, a list of bindings: `export default [bind(Port).to(Adapter), …]`. It builds nothing: the kernel reads the list and builds the dependencies.",
     on: "file",
     methods: new Set(["to", "toValue", "toFactory", "with"]),
+    /** @this {{ methods: Set<string> }} */
     check({ path, exports, defaultArray }) {
       if (!/^src\/(backend|frontend)\/[^/]+\/(test\.)?di\.ts$/.test(path)) return;
       if (exports.length !== 1 || !defaultArray) return "a di.ts has one export: `export default [bind(Port).to(Adapter), …]`";
@@ -319,7 +324,7 @@ export const rules = [
     description: "Each folder of src/backend and src/frontend is a context, and has a di.ts. The kernel finds the contexts by their di.ts.",
     on: "project",
     check: ({ paths }) => {
-      const contexts = new Set([...paths].map(path => /^src\/(backend|frontend)\/[^/]+(?=\/)/.exec(path)?.[0]).filter(Boolean));
+      const contexts = new Set([...paths].map(path => /^src\/(backend|frontend)\/[^/]+(?=\/)/.exec(path)?.[0]).filter(context => context !== undefined));
       return [...contexts].filter(context => !paths.has(`${context}/di.ts`))
         .map(context => ({ file: context, message: `a folder of ${context.split("/").slice(0, 2).join("/")} is a context: it says in di.ts what each of its tokens stands for` }));
     }
@@ -358,6 +363,7 @@ export const rules = [
       backend: { domain: ["domain"], application: ["application", "domain"], presentation: ["presentation", "application", "domain"], infra: ["infra", "domain"], di: ["domain", "infra"] },
       frontend: { domain: ["domain"], application: ["application", "domain"], presentation: ["presentation", "application", "domain"], infra: ["infra", "application", "domain"], di: ["domain", "infra"] }
     },
+    /** @this {{ allowed: Record<string, Record<string, string[]>> }} */
     check({ from, to }) {
       return from.kind === "layer" && to.kind === "layer" && to.side === from.side && to.layer !== "di" && (to.context === from.context || to.context === "shared")
         && !this.allowed[from.side][from.layer]?.includes(to.layer) && `${from.layer} must not depend on ${to.layer}`;
@@ -447,15 +453,15 @@ export const rules = [
   },
   {
     name: "no-test-support",
-    description: "The production code does not import the test support of the kernel (@ingeniozit/caits/testing).",
+    description: "The production code does not import the test support of the kernel (caits/testing).",
     on: "import",
-    check: ({ specifier }) => kernelPathOf(specifier)?.startsWith("testing/") && "production code never imports test support (@ingeniozit/caits/testing)"
+    check: ({ specifier }) => kernelPathOf(specifier)?.startsWith("testing/") && "production code never imports test support (caits/testing)"
   },
   {
     name: "nothing-outside-src",
     description: "The production code in src imports no file outside src, test/ and quality/ included. It imports the kernel by its name, as a package, never by a path.",
     on: "import",
     check: ({ from, specifier, target }) => specifier.startsWith(".") && from.kind !== "other" && !target.startsWith("src/")
-      && "production code (src) never imports a file outside src, tests included; it imports the kernel by its name (@ingeniozit/caits/…)"
+      && "production code (src) never imports a file outside src, tests included; it imports the kernel by its name (caits/…)"
   }
 ];

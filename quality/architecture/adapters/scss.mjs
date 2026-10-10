@@ -10,7 +10,7 @@ const QUOTED = /^\s*(["'])(.+)\1\s*$/;
 export const STYLE_FOLDER = "src/routes/_frontend/style";
 
 /**
- * Reads a stylesheet (SCSS): the files that it loads with @use, @forward and @import. The comments do not count.
+ * Reads a stylesheet (SCSS): the files that it loads with `@use`, `@forward` and `@import`. The comments do not count.
  * Sass looks for a path first next to the file, then in its load path, then in the packages. Thus a path that leads to a file next to
  * the stylesheet (`theme` for _theme.scss) becomes relative (`./theme`); a path that leads to a file of the load path becomes a path
  * from the root of the project (`/src/routes/_frontend/style/values`); the others stay names of packages, as `sass:math` does.
@@ -19,7 +19,7 @@ export const STYLE_FOLDER = "src/routes/_frontend/style";
  * @param {Set<string>} paths the paths of all the files of the project
  */
 export function readScss(path, text, paths) {
-  const code = text.replace(STRING_OR_COMMENT, (match, string) => string ?? "");
+  const code = text.replace(STRING_OR_COMMENT, (/** @type {string} */ _match, /** @type {string | undefined} */ string) => string ?? "");
   const specifiers = [...code.matchAll(USE_OR_FORWARD)].map(match => match[2]);
   for (const [, list] of code.matchAll(IMPORT)) {
     for (const item of list.split(",")) {

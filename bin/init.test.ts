@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
-import { defaultsVersions, EXAMPLE_SOURCE, init, otherVersions, SUGGESTED, update, VERSION } from "./init.js";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { defaultsVersions, EXAMPLE_SOURCE, init, install, otherVersions, SOURCE, SUGGESTED, update, VERSION } from "./init.js";
 
 type PackageJson = { name: string; private: boolean; type: string; scripts: Record<string, string>; dependencies: Record<string, string>; devDependencies: Record<string, string> };
 
@@ -53,8 +53,21 @@ describe("init", () => {
       type: "module",
       scripts: { check: "caits check typecheck lint:code lint:architecture test:coverage test:mutation test:e2e" },
       dependencies: { marko: SUGGESTED.dependencies.marko },
-      devDependencies: { "@ingeniozit/caits": "github:owner/caits#v9", sass: SUGGESTED.devDependencies.sass, typescript: SUGGESTED.devDependencies.typescript }
+      devDependencies: { caits: "github:owner/caits#v9", sass: SUGGESTED.devDependencies.sass, typescript: SUGGESTED.devDependencies.typescript }
     });
+  });
+
+  test("gives the scripts of the project: tdd runs the unit tests, then at each save the tests that the saved file changes", () => {
+    const root = newFolder();
+
+    init(root, "caits");
+
+    expect(Object.keys(packageOf(root).scripts)).toEqual([
+      "dev", "build", "start", "typecheck", "lint", "lint:code", "lint:architecture", "test", "test:unit", "test:contracts", "test:integration",
+      "test:e2e", "test:coverage", "test:mutation", "tdd", "check"
+    ]);
+    // Plain watch mode: `--changed` ran no test when no file differed from the last commit, or out of a git repository.
+    expect(packageOf(root).scripts.tdd).toBe("vitest --config quality/vite.config.ts");
   });
 
   test("with the example, writes its src/ and test/ in place of the first page, and adds its packages", () => {
@@ -100,6 +113,44 @@ describe("init", () => {
     expect(existsSync(root)).toBe(false);
   });
 
+  test("refuses an example with a symbolic link, which could copy any file of the computer into the project, and writes nothing", () => {
+    const example = newExample();
+    const secret = join(newFolder(), "secret.txt");
+    writeFileSync(secret, "a file out of the example\n");
+    symlinkSync(secret, join(example, "src/secret.txt"));
+    const root = join(newFolder(), "app");
+
+    expect(() => init(root, "caits", { example })).toThrow(`${join(example, "src/secret.txt")} is a symbolic link: CAITS copies no link. Remove it, or put the file in its place.`);
+    expect(existsSync(root)).toBe(false);
+  });
+
+  test("without git, says that git is missing", () => {
+    const path = process.env.PATH;
+    process.env.PATH = newFolder();
+    try {
+      expect(() => init(join(newFolder(), "app"), "caits", { example: "https://example.com/example.git#v1" }))
+        .toThrow("git is not installed, or is not in the PATH: init needs it to get the example from https://example.com/example.git#v1.");
+    } finally {
+      process.env.PATH = path;
+    }
+  });
+
+  test.for([
+    ["is not JSON", "{ not json", /is not valid JSON: /],
+    ["is not an object", "[]", /is not valid: it must hold an object/]
+  ])("refuses a package.json that %s, names it, and writes nothing", ([, text, problem]) => {
+    const root = newFolder();
+    write(root, "package.json", text as string);
+
+    expect(() => init(root, "caits")).toThrow(join(root, "package.json"));
+    expect(() => init(root, "caits")).toThrow(problem);
+    expect(readdirSync(root)).toEqual(["package.json"]);
+  });
+
+  test("gets CAITS from npm: this version, or a later one with the same minor version", () => {
+    expect(SOURCE).toBe(`^${VERSION}`);
+  });
+
   test("gets the example of the tag of this version of CAITS", () => {
     expect(EXAMPLE_SOURCE).toBe(`https://github.com/IngeniozIT/caits-example.git#v${VERSION}`);
   });
@@ -139,6 +190,24 @@ describe("init", () => {
     expect(report).toMatchObject({ written: DEFAULTS, ignored: [], values: [] });
     expect(read(root, "quality/eslint.config.js")).toBe("export default [];\n");
     expect(read(root, "package.json")).toBe(before);
+  });
+});
+
+describe("install", () => {
+  test("without npm, fails, and says that npm is missing", () => {
+    const errors: unknown[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((message: unknown) => { errors.push(message); });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const path = process.env.PATH;
+    process.env.PATH = newFolder();
+    try {
+      expect(install(newFolder())).toBe(false);
+    } finally {
+      process.env.PATH = path;
+      error.mockRestore();
+      log.mockRestore();
+    }
+    expect(errors).toEqual(["npm is not installed, or is not in the PATH."]);
   });
 });
 
