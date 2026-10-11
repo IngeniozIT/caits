@@ -1,6 +1,6 @@
 {
   "name": "@ingenioz-it/caits",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "CAITS (Clean Architecture In TypeScript): the technical base of a Marko project with a backend and a frontend.",
   "keywords": [
     "clean-architecture",
