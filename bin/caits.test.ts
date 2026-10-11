@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -104,6 +104,76 @@ describe("the command caits", () => {
     expect(status).toBe(1);
     expect(stderr).toContain(`f0: wrong (always-wrong)\n`);
     expect(stderr).toMatch(new RegExp(`\\n${total}\\n$`));
+  });
+
+  describe("mutation: Stryker, then the score of each file and the survivors, also when Stryker fails", () => {
+    const REPORT = "reports/mutation/mutation.json";
+    const mutant = (status: string, line: number) => ({ status, mutatorName: "EqualityOperator", replacement: "a >= b", location: { start: { line } } });
+    const reportOf = (...statuses: string[]) => ({ files: { "src/Message.ts": { source: "line 1\nif (a > b) throw\n", mutants: statuses.map((status, index) => mutant(status, index + 1)) } } });
+
+    /** A project whose Stryker is a fake: it says how it was called, writes the report when it has one, and exits with the code. */
+    function projectWithStryker(code: number, report?: unknown) {
+      const folder = newFolder();
+      writeFileSync(join(folder, "package.json"), `{ "name": "app", "private": true }\n`);
+      mkdirSync(join(folder, "quality/caits"), { recursive: true });
+      writeFileSync(join(folder, "quality/stryker.config.mjs"), "export default {};\n");
+      mkdirSync(join(folder, "node_modules/.bin"), { recursive: true });
+      const write = report === undefined ? "" : `mkdir -p reports/mutation && cat > ${REPORT} <<'EOF'\n${JSON.stringify(report)}\nEOF\n`;
+      writeFileSync(join(folder, "node_modules/.bin/stryker"), `#!/bin/sh\necho "stryker $*"\n${write}exit ${code}\n`);
+      chmodSync(join(folder, "node_modules/.bin/stryker"), 0o755);
+      return folder;
+    }
+
+    test("under the threshold, gives the output of Stryker, then the survivors, and keeps the exit code of Stryker", () => {
+      const folder = projectWithStryker(1, reportOf("Killed", "Survived"));
+
+      const { status, stdout } = caits(folder, "mutation");
+
+      expect(status).toBe(1);
+      expect(stdout).toContain("stryker run quality/stryker.config.mjs\n");
+      expect(stdout).toContain("Mutation score: 50.0%  (1 killed of 2 valid mutants)\n");
+      expect(stdout).toContain("L2 [survived] EqualityOperator: if (a > b) throw  →  a >= b\n");
+      expect(stdout.indexOf("stryker run")).toBeLessThan(stdout.indexOf("Mutation score"));
+    });
+
+    test("at 100%, gives the score of each file, and passes", () => {
+      const folder = projectWithStryker(0, reportOf("Killed", "Timeout"));
+
+      const { status, stdout } = caits(folder, "mutation");
+
+      expect(status).toBe(0);
+      expect(stdout).toContain("Mutation score: 100.0%  (2 killed of 2 valid mutants)\n");
+      expect(stdout).not.toContain("[survived]");
+    });
+
+    test("gives its options to Stryker", () => {
+      const { stdout } = caits(projectWithStryker(0, reportOf("Killed")), "mutation", "--concurrency", "2");
+
+      expect(stdout).toContain("stryker run quality/stryker.config.mjs --concurrency 2\n");
+    });
+
+    test("when Stryker stops before its report, shows no summary, not even that of the run before, and fails", () => {
+      const folder = projectWithStryker(2);
+      mkdirSync(join(folder, "reports/mutation"), { recursive: true });
+      writeFileSync(join(folder, REPORT), JSON.stringify(reportOf("Killed")));
+
+      const { status, stdout } = caits(folder, "mutation");
+
+      expect(status).toBe(2);
+      expect(stdout).not.toContain("Mutation score");
+      expect(existsSync(join(folder, REPORT))).toBe(false);
+    });
+
+    test("without quality/stryker.config.mjs, says how to write it, and runs nothing", () => {
+      const folder = projectWithStryker(0, reportOf("Killed"));
+      rmSync(join(folder, "quality/stryker.config.mjs"));
+
+      const { status, stdout, stderr } = caits(folder, "mutation");
+
+      expect(status).toBe(1);
+      expect(stderr).toContain("quality/stryker.config.mjs is missing: it gives the configuration of the mutation tests. Run `npx caits init .` to write it.\n");
+      expect(stdout).not.toContain("stryker run");
+    });
   });
 
   test("mutation-summary: without the report of the mutation tests, says how to get it", () => {

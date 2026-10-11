@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 /** The report that Stryker writes in JSON (quality/caits/stryker.mjs). */
-const REPORT = "reports/mutation/mutation.json";
+export const REPORT = "reports/mutation/mutation.json";
 
 /** @typedef {{ status: string; mutatorName: string; replacement?: string; location: { start: { line: number } } }} Mutant */
 

@@ -2,6 +2,13 @@
 
 The changes of each version of CAITS, the newest first. A version is a git tag, and a version of the package `@ingenioz-it/caits` on npm: `npx @ingenioz-it/caits@<version> init my-app`.
 
+## 0.5.1
+
+### Command
+
+- `npm run test:mutation` gives the mutants that survived when the score is under 100%. It runs `caits mutation`: Stryker, then the score of each file and the survivors, whether Stryker passed or not, with the exit code of Stryker. Before, the script stopped after Stryker when it failed, and its summary showed only when every mutant was killed. A run that stops before its report shows no summary of the run before.
+- In a project made with 0.5.0, change the script in package.json: `"test:mutation": "caits mutation"`. Then run `npm update` and `npx caits update`.
+
 ## 0.5.0
 
 ### Development

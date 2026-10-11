@@ -23,6 +23,8 @@ const USAGE = `Usage: caits <command>
   check <script>…      Runs the npm scripts of the checks at once. Shows the output of the checks that fail, and only theirs.
   architecture         Checks the rules of quality/architecture.mjs.
   e2e                  Runs the end-to-end tests on the production build.
+  mutation             Runs the mutation tests (Stryker), then gives the score of each file and the mutants that survived. Its exit
+                       code is that of Stryker.
   mutation-summary     Gives the mutation score of each file (--survivors: the mutants that survived).
   mutation-suite       The unit tests, as Stryker runs them for each mutant.
 
@@ -30,7 +32,7 @@ const USAGE = `Usage: caits <command>
   --version            Shows the version of CAITS.`;
 
 /** The commands that run a tool of quality/: their code is in the folder quality/ of CAITS. */
-const TOOLS = new Set(["dev", "check", "architecture", "e2e", "mutation-summary", "mutation-suite"]);
+const TOOLS = new Set(["dev", "check", "architecture", "e2e", "mutation", "mutation-summary", "mutation-suite"]);
 
 /** The options of `caits init`. */
 const INIT_OPTIONS = /** @type {const} */ ({ caits: { type: "string" }, example: { type: "boolean" }, "example-source": { type: "string" }, "no-install": { type: "boolean" } });

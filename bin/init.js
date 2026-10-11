@@ -99,7 +99,7 @@ const PACKAGE = {
     "test:integration": "vitest run --config quality/vite.config.ts .integration.test.ts",
     "test:e2e": "caits e2e",
     "test:coverage": "vitest run --config quality/vite.config.ts --coverage --reporter=default --reporter=@ingenioz-it/caits/quality/test-docs/vitest-reporter",
-    "test:mutation": "stryker run quality/stryker.config.mjs && caits mutation-summary",
+    "test:mutation": "caits mutation",
     tdd: "vitest --config quality/vite.config.ts",
     check: "caits check typecheck lint:code lint:architecture test:coverage test:mutation test:e2e"
   }
