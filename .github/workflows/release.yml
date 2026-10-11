@@ -24,6 +24,8 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          # The npm docs: never use a cache in a release build.
+          package-manager-cache: false
       # Trusted publishing needs npm 11.5.1 or later, and `npm stage` a recent npm 11.
       - run: npm install --global npm@11
 
@@ -54,4 +56,5 @@ jobs:
         run: npm run test:mutation
       - if: steps.npm.outputs.published != 'true'
         name: Stage the version on npm
-        run: npm stage publish
+        # When npm refuses the OIDC token of this workflow, it says why only in its verbose lines ("oidc"), then fails with E401.
+        run: npm stage publish --loglevel verbose
