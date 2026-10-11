@@ -22,7 +22,7 @@ export default defineConfig({
   outputDir: join(root, "test-results"),
   workers: 1,
   fullyParallel: false,
-  reporter: [["list"], [fileOf("caits/quality/test-docs/playwright-reporter")]],
+  reporter: [["list"], [fileOf("@ingenioz-it/caits/quality/test-docs/playwright-reporter")]],
   use: { baseURL: `http://127.0.0.1:${port}` },
   webServer: {
     command: "npm run build && npm run start",

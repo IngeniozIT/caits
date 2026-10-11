@@ -9,7 +9,7 @@ import { declareDependencies } from "./di/declareDependencies.js";
 /** @import { KernelOptions } from "./vite.types.js" */
 
 /** The name of this package: the app imports the tokens of the kernel (EventPublisher, DataDirectory, Fetcher…) with it. */
-const KERNEL = "caits";
+const KERNEL = "@ingenioz-it/caits";
 
 /** The folder of the kernel: its classes and its tokens need the same code (a Controller gets its MessageBus, a token its name). */
 const OWN_FOLDER = `${normalizePath(import.meta.dirname)}/`;

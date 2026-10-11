@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The command of CAITS. Without installing CAITS first: npx caits init my-app
+// The command of CAITS. Without installing CAITS first: npx @ingenioz-it/caits init my-app
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -135,7 +135,7 @@ function runInit(args) {
   console.log(`Wrote ${count(written.length, "file")}. CAITS owns those of ${DEFAULTS_FOLDER}/: the others are yours.`);
   if (kept.length > 0) {
     console.log(`Kept ${count(kept.length, "file")} that the project has already: ${kept.join(", ")}.`);
-    console.log("  Compare them with those of node_modules/caits/template/project/ (without the dot at the start of the name).");
+    console.log("  Compare them with those of node_modules/@ingenioz-it/caits/template/project/ (without the dot at the start of the name).");
   }
   if (ignored.length > 0) console.log(`Added to .gitignore: ${ignored.join(" ")}`);
   if (keptValues.length > 0) {

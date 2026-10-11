@@ -1,4 +1,4 @@
-import { Token } from "caits/Token";
+import { Token } from "@ingenioz-it/caits/Token";
 
 export interface Greeter {
   greet(name: string): string;

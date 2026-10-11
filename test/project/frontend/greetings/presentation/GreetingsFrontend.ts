@@ -1,9 +1,9 @@
-import type { Frontend } from "caits/state/request";
+import type { Frontend } from "@ingenioz-it/caits/state/request";
 import type { GreetingsEvent } from "../application/event/GreetingsEvent.js";
 import type { GreetingsState } from "./store/greetingsStore.js";
 
 export type GreetingsFrontend = Frontend<GreetingsState, GreetingsEvent>;
 
-declare module "caits/di/frontend" {
+declare module "@ingenioz-it/caits/di/frontend" {
   interface Frontends { greetings: GreetingsFrontend }
 }

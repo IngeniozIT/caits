@@ -29,7 +29,7 @@ import { dirname, posix, relative, resolve } from "node:path";
  */
 
 /** The kernel is a package: the app imports it by its name, and it holds no file of the project. */
-export const KERNEL = { name: "caits" };
+export const KERNEL = { name: "@ingenioz-it/caits" };
 
 /**
  * The path of an import in the kernel, without the name of the kernel (`di/Container`), or null for an import of something else.

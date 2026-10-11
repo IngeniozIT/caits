@@ -1,4 +1,4 @@
-import type { Fetcher } from "caits/di/Fetcher";
+import type { Fetcher } from "@ingenioz-it/caits/di/Fetcher";
 import type { GreetingsGateway } from "../../domain/port/greetings-gateway/GreetingsGateway.js";
 
 export class HttpGreetingsGateway implements GreetingsGateway {

@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import marko from "@marko/run/vite";
 import { defineConfig } from "vitest/config";
-import { kernel, wholeRouteTypes } from "caits/vite";
+import { kernel, wholeRouteTypes } from "@ingenioz-it/caits/vite";
 
 /**
  * The folder of the stylesheets of the app. Sass looks in it after the folder of a stylesheet: each stylesheet of the routes loads the

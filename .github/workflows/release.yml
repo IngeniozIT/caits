@@ -1,7 +1,7 @@
 name: Release
 
 # A tag v<version> puts that version of CAITS on npm, as a staged version: it becomes public only when a maintainer approves it with
-# the second factor of the npm account (`npm stage list caits`, then `npm stage approve <id>`: README.md, "Release a version").
+# the second factor of the npm account (`npm stage list @ingenioz-it/caits`, then `npm stage approve <id>`: README.md, "Release a version").
 # npm trusts this workflow (trusted publishing, with OIDC): the repository keeps no npm token.
 
 on:
@@ -35,13 +35,14 @@ jobs:
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "NAME=$(node -p 'require("./package.json").name')" >> "$GITHUB_ENV"
 
       # The first version went to npm from the computer of the maintainer, before npm could trust this workflow.
       - name: Skip a version that npm has already
         id: npm
         run: |
-          if npm view "caits@$VERSION" version > /dev/null 2>&1; then
-            echo "npm has caits $VERSION already: nothing to do."
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "npm has $NAME $VERSION already: nothing to do."
             echo "published=true" >> "$GITHUB_OUTPUT"
           fi
 

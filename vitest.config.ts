@@ -8,8 +8,8 @@ export default defineConfig({
   plugins: [kernel({ source: "test/project" })],
   resolve: {
     alias: [
-      { find: /^caits\/quality\//, replacement: fileURLToPath(new URL("./quality/", import.meta.url)) },
-      { find: /^caits\//, replacement: fileURLToPath(new URL("./src/", import.meta.url)) }
+      { find: /^@ingenioz-it\/caits\/quality\//, replacement: fileURLToPath(new URL("./quality/", import.meta.url)) },
+      { find: /^@ingenioz-it\/caits\//, replacement: fileURLToPath(new URL("./src/", import.meta.url)) }
     ]
   },
   test: {

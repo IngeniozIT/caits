@@ -1,6 +1,6 @@
-import { adapterOf, frontendsOf, importedModules, isCore, isMarko, isNode, isPackage, kebab, kernelPathOf, locate, portOf, typeOfEvent } from "caits/quality/architecture";
+import { adapterOf, frontendsOf, importedModules, isCore, isMarko, isNode, isPackage, kebab, kernelPathOf, locate, portOf, typeOfEvent } from "@ingenioz-it/caits/quality/architecture";
 
-/** @import { Rule } from "caits/quality/architecture" */
+/** @import { Rule } from "@ingenioz-it/caits/quality/architecture" */
 
 /**
  * The rules of the architecture, by layer. Each rule has a name and a description, reads one kind of thing (`on`), and checks it:
@@ -12,7 +12,7 @@ import { adapterOf, frontendsOf, importedModules, isCore, isMarko, isNode, isPac
  * @type {Rule[]}
  */
 export const rules = [
-  // Kernel: the package caits builds the containers and the controllers
+  // Kernel: the package @ingenioz-it/caits builds the containers and the controllers
 
   {
     name: "container-built-by-kernel",
@@ -110,7 +110,7 @@ export const rules = [
   },
   {
     name: "domain-uses-kernel-primitives",
-    description: "The domain imports only the files at the root of the kernel (caits/Result, /Token, /DomainEvent). It does not import the buses, the store or the DI of the kernel.",
+    description: "The domain imports only the files at the root of the kernel (@ingenioz-it/caits/Result, /Token, /DomainEvent). It does not import the buses, the store or the DI of the kernel.",
     on: "import",
     check: ({ from, specifier }) => from.layer === "domain" && kernelPathOf(specifier)?.includes("/")
       && "the domain imports only the kernel's domain primitives, never buses or the store"
@@ -453,15 +453,15 @@ export const rules = [
   },
   {
     name: "no-test-support",
-    description: "The production code does not import the test support of the kernel (caits/testing).",
+    description: "The production code does not import the test support of the kernel (@ingenioz-it/caits/testing).",
     on: "import",
-    check: ({ specifier }) => kernelPathOf(specifier)?.startsWith("testing/") && "production code never imports test support (caits/testing)"
+    check: ({ specifier }) => kernelPathOf(specifier)?.startsWith("testing/") && "production code never imports test support (@ingenioz-it/caits/testing)"
   },
   {
     name: "nothing-outside-src",
     description: "The production code in src imports no file outside src, test/ and quality/ included. It imports the kernel by its name, as a package, never by a path.",
     on: "import",
     check: ({ from, specifier, target }) => specifier.startsWith(".") && from.kind !== "other" && !target.startsWith("src/")
-      && "production code (src) never imports a file outside src, tests included; it imports the kernel by its name (caits/…)"
+      && "production code (src) never imports a file outside src, tests included; it imports the kernel by its name (@ingenioz-it/caits/…)"
   }
 ];

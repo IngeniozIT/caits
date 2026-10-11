@@ -98,7 +98,7 @@ const PACKAGE = {
     "test:contracts": "vitest run --config quality/vite.config.ts /infra/",
     "test:integration": "vitest run --config quality/vite.config.ts .integration.test.ts",
     "test:e2e": "caits e2e",
-    "test:coverage": "vitest run --config quality/vite.config.ts --coverage --reporter=default --reporter=caits/quality/test-docs/vitest-reporter",
+    "test:coverage": "vitest run --config quality/vite.config.ts --coverage --reporter=default --reporter=@ingenioz-it/caits/quality/test-docs/vitest-reporter",
     "test:mutation": "stryker run quality/stryker.config.mjs && caits mutation-summary",
     tdd: "vitest --config quality/vite.config.ts",
     check: "caits check typecheck lint:code lint:architecture test:coverage test:mutation test:e2e"
@@ -306,7 +306,7 @@ function addMissingLines(file, text) {
  */
 function addToPackage(file, project, caits, example) {
   const dependencies = { ...SUGGESTED.dependencies, ...example.dependencies };
-  const devDependencies = { caits, ...SUGGESTED.devDependencies, ...example.devDependencies };
+  const devDependencies = { "@ingenioz-it/caits": caits, ...SUGGESTED.devDependencies, ...example.devDependencies };
   const wanted = { ...PACKAGE, dependencies, devDependencies };
   /** @type {KeptValue[]} */
   const kept = [];

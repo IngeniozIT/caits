@@ -8,7 +8,7 @@ const ROOT = join(import.meta.dirname, "project-in-memory");
 
 /** A small project that respects every rule: a backend context, a frontend context, the context map and the routes. */
 const project = {
-  "src/backend/notes/di.ts": `import { bind } from "caits/di/Container";
+  "src/backend/notes/di.ts": `import { bind } from "@ingenioz-it/caits/di/Container";
 import { NoteRepository } from "./domain/port/note-repository/NoteRepository.js";
 import { InMemoryNoteRepository } from "./infra/note-repository/in-memory-note-repository.js";
 
@@ -24,7 +24,7 @@ export class Note {
 `,
   "src/backend/notes/domain/error/InvalidNoteError.ts": "export class InvalidNoteError extends Error {}\n",
   "src/backend/notes/domain/event/NoteAdded.ts": "export class NoteAdded {}\n",
-  "src/backend/notes/domain/port/note-repository/NoteRepository.ts": `import { Token } from "caits/Token";
+  "src/backend/notes/domain/port/note-repository/NoteRepository.ts": `import { Token } from "@ingenioz-it/caits/Token";
 import type { Note } from "#context/domain/entity/Note.js";
 
 export interface NoteRepository { add(note: Note): Promise<void> }
@@ -52,7 +52,7 @@ export class AddNoteHandler {
   execute(): AddNoteOutput { return new AddNoteOutput(); }
 }
 `,
-  "src/backend/notes/presentation/add-note-http/add-note-http.controller.ts": `import { Controller } from "caits/messaging/Controller";
+  "src/backend/notes/presentation/add-note-http/add-note-http.controller.ts": `import { Controller } from "@ingenioz-it/caits/messaging/Controller";
 import { AddNoteCommand } from "#context/application/command/add-note/add-note.dto.js";
 
 export class AddNoteHttpController extends Controller {
@@ -65,13 +65,13 @@ import { NoteAdded } from "./notes/domain/event/NoteAdded.js";
 export default [[NoteAdded, () => [new AddNoteCommand()]]];
 `,
 
-  "src/frontend/notes/di.ts": `import { bind } from "caits/di/Container";
+  "src/frontend/notes/di.ts": `import { bind } from "@ingenioz-it/caits/di/Container";
 import { NotesGateway } from "./domain/port/notes-gateway/NotesGateway.js";
 import { HttpNotesGateway } from "./infra/notes-gateway/http-notes-gateway.js";
 
 export default [bind(NotesGateway).to(HttpNotesGateway)];
 `,
-  "src/frontend/notes/domain/port/notes-gateway/NotesGateway.ts": `import { Token } from "caits/Token";
+  "src/frontend/notes/domain/port/notes-gateway/NotesGateway.ts": `import { Token } from "@ingenioz-it/caits/Token";
 
 export interface NotesGateway { list(): Promise<string[]> }
 
@@ -104,7 +104,7 @@ export class ListNotesHandler {
 
 export default { send: () => new ListNotesQuery() };
 `,
-  "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko": `import { frontendOf } from "caits/di/frontend";
+  "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko": `import { frontendOf } from "@ingenioz-it/caits/di/frontend";
 import { NotesRequested } from "#context/application/event/NotesRequested.js";
 import "./NotesBlock.scss";
 
@@ -121,7 +121,7 @@ import "./NotesBlock.scss";
 
 <main><\${NotesBlock}/></main>
 `,
-  "src/routes/_backend/api/notes/+handler.ts": `import { controller } from "caits/di/backend";
+  "src/routes/_backend/api/notes/+handler.ts": `import { controller } from "@ingenioz-it/caits/di/backend";
 import { AddNoteHttpController } from "#backend/notes/presentation/add-note-http/add-note-http.controller.js";
 
 export const POST = () => controller(AddNoteHttpController);
@@ -173,7 +173,7 @@ const cases = [
     }
   },
   { rule: "core-without-node", breaks: "an entity imports Node", files: { [entity]: 'import { randomUUID } from "node:crypto";\n\nexport class Note { readonly id = randomUUID(); }\n' } },
-  { rule: "domain-uses-kernel-primitives", breaks: "an entity imports a bus of the kernel", files: { [entity]: 'import { FrontendEventBus } from "caits/messaging/FrontendEventBus";\n\nexport class Note { bus?: FrontendEventBus; }\n' } },
+  { rule: "domain-uses-kernel-primitives", breaks: "an entity imports a bus of the kernel", files: { [entity]: 'import { FrontendEventBus } from "@ingenioz-it/caits/messaging/FrontendEventBus";\n\nexport class Note { bus?: FrontendEventBus; }\n' } },
   { rule: "entity-without-port", breaks: "an entity imports a port", files: { [entity]: 'import type { NoteRepository } from "#context/domain/port/note-repository/NoteRepository.js";\n\nexport class Note { repository?: NoteRepository; }\n' } },
 
   { rule: "backend-application-shape", breaks: "a use case holds a helper", files: { "src/backend/notes/application/command/add-note/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
@@ -242,7 +242,7 @@ const cases = [
   { rule: "no-test-environment", breaks: "a handler imports a test.di.ts", files: { [handler]: 'import "#context/test.di.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
   {
     rule: "no-test-support", breaks: "a handler imports the test support of the kernel",
-    files: { [handler]: 'import "caits/testing/backend/application";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }
+    files: { [handler]: 'import "@ingenioz-it/caits/testing/backend/application";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }
   },
   {
     rule: "nothing-outside-src", breaks: "a handler imports a file of test/",

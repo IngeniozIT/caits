@@ -1,4 +1,4 @@
-import { bind } from "caits/di/Container";
+import { bind } from "@ingenioz-it/caits/di/Container";
 import { Greeter } from "./domain/port/greeter/Greeter.js";
 import { PoliteGreeter } from "./infra/greeter/polite-greeter.js";
 

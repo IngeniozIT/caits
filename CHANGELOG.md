@@ -1,6 +1,6 @@
 # Changelog
 
-The changes of each version of CAITS, the newest first. A version is a git tag, and a version of the package `caits` on npm: `npx caits@<version> init my-app`.
+The changes of each version of CAITS, the newest first. A version is a git tag, and a version of the package `@ingenioz-it/caits` on npm: `npx @ingenioz-it/caits@<version> init my-app`.
 
 ## 0.5.0
 
@@ -33,7 +33,7 @@ The changes of each version of CAITS, the newest first. A version is a git tag, 
 
 ### Package
 
-- CAITS is on npm, as the package `caits`: `npx caits init my-app --example` makes a project, and a project depends on `caits` `^0.5.0` in place of the git tag of GitHub. Its imports start with `caits/` in place of `@ingeniozit/caits/`: in a project, replace the name in package.json and in the imports, then run `npm install` and `npx caits update`.
+- CAITS is on npm, as the package `@ingenioz-it/caits`: `npx @ingenioz-it/caits init my-app --example` makes a project, and a project depends on `@ingenioz-it/caits` `^0.5.0` in place of the git tag of GitHub. Its imports start with `@ingenioz-it/caits/` in place of `@ingeniozit/caits/`: in a project, replace the name in package.json and in the imports, then run `npm install` and `npx caits update`. npm refuses the name `caits`, too close to the names of other packages.
 - git is necessary only for `init --example`, which gets the example with git.
 - Node.js 22.18 or later is necessary in Node 22 (`^22.18.0 || ^24.0.0 || >=26.0.0`): from 22.18, Node strips the types of TypeScript without an option.
 - The peer dependencies give the versions that CAITS supports: `@marko/run` `^0.11.13`, `vite` `^8.0.0`, `vitest` `^5.0.0`, and the packages that the defaults of CAITS import (`@marko/compiler`, `@playwright/test`, `@eslint/js`, `typescript-eslint`). package.json has a homepage, a page for the issues, an author and keywords.

@@ -1,7 +1,7 @@
 import js from "@eslint/js";
 import { join } from "node:path";
 import tseslint from "typescript-eslint";
-import { writeRouteTypes } from "caits/quality/route-types";
+import { writeRouteTypes } from "@ingenioz-it/caits/quality/route-types";
 
 /** This file is in quality/caits/: the root of the project is two folders up. */
 const root = join(import.meta.dirname, "../..");

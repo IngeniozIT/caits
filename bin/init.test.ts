@@ -53,7 +53,7 @@ describe("init", () => {
       type: "module",
       scripts: { check: "caits check typecheck lint:code lint:architecture test:coverage test:mutation test:e2e" },
       dependencies: { marko: SUGGESTED.dependencies.marko },
-      devDependencies: { caits: "github:owner/caits#v9", sass: SUGGESTED.devDependencies.sass, typescript: SUGGESTED.devDependencies.typescript }
+      devDependencies: { "@ingenioz-it/caits": "github:owner/caits#v9", sass: SUGGESTED.devDependencies.sass, typescript: SUGGESTED.devDependencies.typescript }
     });
   });
 

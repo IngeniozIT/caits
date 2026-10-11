@@ -1,7 +1,7 @@
 /** The modules of the kernel's Vite plugin (vite.js): the files of the contexts, by their path from the root of the project. */
 declare module "virtual:kernel/backend" {
-  import type { Binding } from "caits/di/Container";
-  import type { Translation } from "caits/messaging/ContextMap";
+  import type { Binding } from "@ingenioz-it/caits/di/Container";
+  import type { Translation } from "@ingenioz-it/caits/messaging/ContextMap";
   type Modules = Record<string, Record<string, unknown>>;
   export const bindings: Record<string, readonly Binding[]>;
   export const dtos: Modules;
@@ -11,13 +11,13 @@ declare module "virtual:kernel/backend" {
 }
 
 declare module "virtual:kernel/backend-test" {
-  import type { Binding } from "caits/di/Container";
+  import type { Binding } from "@ingenioz-it/caits/di/Container";
   export const bindings: Record<string, readonly Binding[]>;
 }
 
 declare module "virtual:kernel/frontend" {
-  import type { Binding } from "caits/di/Container";
-  import type { StoreDefinition } from "caits/state/createStore";
+  import type { Binding } from "@ingenioz-it/caits/di/Container";
+  import type { StoreDefinition } from "@ingenioz-it/caits/state/createStore";
   type Modules = Record<string, Record<string, unknown>>;
   export const bindings: Record<string, readonly Binding[]>;
   export const dtos: Modules;
@@ -26,7 +26,7 @@ declare module "virtual:kernel/frontend" {
 }
 
 declare module "virtual:kernel/frontend-test" {
-  import type { Binding } from "caits/di/Container";
+  import type { Binding } from "@ingenioz-it/caits/di/Container";
   export const bindings: Record<string, readonly Binding[]>;
 }
 

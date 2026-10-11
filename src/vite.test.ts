@@ -52,8 +52,8 @@ describe("wholeRouteTypes", () => {
 
 describe("the contexts, while the server runs (dev server, Vitest in watch mode)", () => {
   const ROOT = "/project";
-  const DISCOVERED = "/project/node_modules/caits/src/di/discovered.ts";
-  const TEST_APPLICATIONS = "/project/node_modules/caits/src/testing/backend/applications.ts";
+  const DISCOVERED = "/project/node_modules/@ingenioz-it/caits/src/di/discovered.ts";
+  const TEST_APPLICATIONS = "/project/node_modules/@ingenioz-it/caits/src/testing/backend/applications.ts";
 
   /** A server whose environments loaded the modules of the backend: each module, with the files that import it. */
   function serverWithTheContexts() {
