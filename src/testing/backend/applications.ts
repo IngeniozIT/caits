@@ -14,7 +14,7 @@ const testBindings: Record<string, readonly Binding[]> = Object.fromEntries(
 
 type EventType<E extends DomainEvent> = abstract new (...args: never[]) => E;
 
-/** The whole backend, built from the bindings of its contexts with their test.di.ts over them, and predictable ids. For the tests of the context map. */
+/** The whole backend, built from the bindings of its contexts with their test.di.ts over them, and predictable ids. For the tests of the context maps. */
 export function createTestBackendApplication() {
   const reportedErrors: unknown[] = [];
   const published: Published[] = [];
@@ -29,7 +29,7 @@ export function createTestBackendApplication() {
   return {
     ...backend,
     reportedErrors,
-    /** Every event the contexts published, in its envelope, in the order they were published. */
+    /** Every event of shared that the context maps shared, in its envelope, in the order they were published. */
     published,
     publishedNames: () => published.map(({ event }) => event.constructor.name),
     publishedOf: <E extends DomainEvent>(type: EventType<E>): E[] => published.flatMap(({ event }) => event instanceof type ? [event] : [])
@@ -37,13 +37,14 @@ export function createTestBackendApplication() {
 }
 
 /**
- * Every context, built from its di.ts with its test.di.ts over it, but alone: no event reaches another context. A test sends input DTOs
- * and reads the events the handlers published.
+ * Every context, built from its di.ts with its test.di.ts over it, but alone: no context map hears or shares an event. A test sends
+ * input DTOs and reads the events of their context that the handlers published.
  */
 export function createTestApplication() {
   const published: DomainEvent[] = [];
-  const backend = createBackend({ ...discovered, map: [] }, { replace: testBindings, reportError: () => undefined });
-  backend.subscribe(({ event }) => { published.push(event); });
+  const alone = Object.fromEntries(Object.entries(discovered.contexts).map(([name, context]) => [name, { ...context, map: [] }]));
+  const backend = createBackend({ ...discovered, contexts: alone }, { replace: testBindings, reportError: () => undefined });
+  backend.subscribeToContexts(event => { published.push(event); });
 
   return {
     /** Sends an input DTO to the message bus of the context that handles it. */

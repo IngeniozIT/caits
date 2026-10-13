@@ -11,7 +11,7 @@ import { Fetcher } from "./Fetcher.js";
 type Handler = new () => { execute(input: unknown): unknown };
 
 /**
- * Builds the frontend of a context: its event bus, its message bus with the handlers of its use cases, its store, and a container with
+ * Builds the frontend of a context: its event bus, its message bus with the handlers of its use cases, its store if it has one, and a container with
  * the bindings of its di.ts. The container gives each class what its constructor needs: a handler gets the event bus as its
  * EventPublisher. The store gets it as its EventSubscriber.
  */
@@ -25,11 +25,14 @@ function build(context: FrontendModules, fetch: Fetcher, replace: readonly Bindi
     container.check(handler as Handler);
     bus.subscribe(input as never, received => container.create(handler as Handler).execute(received) as never);
   }
-  return { events, store: createStore(context.store, { events, bus }), bus, container };
+  return { events, store: context.store && createStore(context.store, { events, bus }), bus, container };
 }
 
-/** The frontend of a context, as the views get it: the publisher of its events, and the store they subscribe to. */
-export function createFrontend(context: FrontendModules, fetch: Fetcher, replace: readonly Binding[] = []): { events: EventPublisher<unknown>; store: Store<unknown> } {
+/**
+ * The frontend of a context, as the views get it: the publisher of its events, and the store they subscribe to (none, for a context
+ * without a store). The kernel subscribes to its events too, for its context map: the events of the context that it shares.
+ */
+export function createFrontend(context: FrontendModules, fetch: Fetcher, replace: readonly Binding[] = []): { events: FrontendEventBus<unknown>; store: Store<unknown> | undefined } {
   const { events, store } = build(context, fetch, replace);
   return { events, store };
 }

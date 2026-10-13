@@ -1,4 +1,5 @@
-import { dirname, posix, relative, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, posix, relative, resolve } from "node:path";
 
 /** What the rules know of the project: where a file lives, what it imports, and how the parts are named. */
 
@@ -6,7 +7,7 @@ import { dirname, posix, relative, resolve } from "node:path";
 /** @typedef {"backend" | "frontend"} Side */
 /**
  * Where a file lives: see locate. Only a layer has a context and a layer, and only a layer and the routes have a side.
- * @typedef {{ kind: "other" | "map" | "test-environment"; side?: undefined; context?: undefined; layer?: undefined }
+ * @typedef {{ kind: "other" | "test-environment"; side?: undefined; context?: undefined; layer?: undefined }
  *   | { kind: "routes"; side: Side; context?: undefined; layer?: undefined }
  *   | { kind: "layer"; side: Side; context: string; layer: string }} Location
  */
@@ -47,8 +48,11 @@ export function locate(path) {
   const parts = path.split("/");
   if (parts[0] !== "src") return { kind: "other" };
   if (parts[1] === "routes") return { kind: "routes", side: parts[2] === "_frontend" ? "frontend" : "backend" };
-  if (parts[1] === "backend" && parts.length === 3) return { kind: "map" };
+
   if (/^test\.di\.(js|ts)$/.test(parts[parts.length - 1])) return { kind: "test-environment" };
+  if ((parts[1] === "backend" || parts[1] === "frontend") && parts.length === 4 && /^context-map(\.test)?\.(js|ts)$/.test(parts[3])) {
+    return { kind: "layer", context: parts[2], side: parts[1], layer: "map" };
+  }
   if ((parts[1] === "backend" || parts[1] === "frontend") && parts.length === 4) return { kind: "layer", context: parts[2], side: parts[1], layer: "di" };
   if (parts[1] === "backend" || parts[1] === "frontend") return { kind: "layer", context: parts[2], side: parts[1], layer: parts[3] };
   return { kind: "other" };
@@ -62,10 +66,31 @@ export const isTestCode = path => /\.(test|contract)\.ts$|(^|\/)test\.di\.ts$/.t
 
 /**
  * The shortcuts of the imports, to the folders they lead to. #context leads to the context of the file: each context has a package.json
- * that says it. #shared leads to the backend context shared: tsconfig.json says it to TypeScript, and the kernel's plugin to Vite.
- * #backend and #frontend lead to the sides, for the routes: the package.json of the project says it.
+ * that says it. #shared leads to the backend context shared, and #frontend-shared to the frontend context shared: tsconfig.json says it
+ * to TypeScript, and the kernel's plugin to Vite. #backend and #frontend lead to the sides, for the routes: the package.json of the
+ * project says it.
  */
-const SHORTCUTS = new Map([["shared", "src/backend/shared"], ["backend", "src/backend"], ["frontend", "src/frontend"]]);
+const SHORTCUTS = new Map([
+  ["shared", "src/backend/shared"], ["frontend-shared", "src/frontend/shared"], ["backend", "src/backend"], ["frontend", "src/frontend"]
+]);
+
+/** The folder of the tags of the components of the frontend context shared, as the marko.json of the frontend gives it. */
+const SHARED_TAGS = "shared/presentation/component";
+
+/**
+ * Whether src/frontend/marko.json gives Marko the folder of the components of the frontend context shared as a folder of tags
+ * ("tags-dir": "./shared/presentation/component", alone or among others).
+ * @param {string} root
+ * @returns {boolean}
+ */
+export function givesSharedTags(root) {
+  const file = join(root, "src/frontend/marko.json");
+  if (!existsSync(file)) return false;
+  /** @type {unknown} */
+  const read = JSON.parse(readFileSync(file, "utf8"));
+  const taglib = /** @type {{ "tags-dir"?: string | string[] }} */ (read);
+  return [taglib["tags-dir"] ?? []].flat().some(folder => posix.normalize(folder).replace(/\/$/, "") === SHARED_TAGS);
+}
 
 /** The folder of the context that holds a file (src/backend/notes), or undefined. @type {(path: string) => string | undefined} */
 const contextFolderOf = path => /^src\/(backend|frontend)\/[^/]+(?=\/)/.exec(path)?.[0];
@@ -94,6 +119,37 @@ export const importedModules = (file, root) => file.imports
   .map(specifier => resolveImport(file.path, specifier, root))
   .filter(({ internal }) => internal)
   .map(({ target }) => target.replace(/\.(js|ts)$/, ""));
+
+/** A class that a file names: its name, and its module (the file of the project without its extension, or the specifier of a package). @typedef {{ name: string; module: string }} Named */
+/**
+ * A line of a context map: whether it shares (share) or hears (when), the event that starts it, and the classes that it builds, as the
+ * file imports them. A name that the file does not import has no module: the line names a class of its own file.
+ * @typedef {{ shares: boolean; source: string; event: Named | null; gives: Named[] }} MapLine
+ */
+
+/**
+ * The lines of a context map, `export default [when(Event, …), share(Event, …)]`, in their order. Its other items are left aside.
+ * @param {File} file
+ * @param {string} root
+ * @returns {MapLine[]}
+ */
+export function linesOf(file, root) {
+  /** @type {(name: string | null) => Named | null} */
+  const named = name => {
+    const imported = file.imported.find(entry => entry.name === name);
+    if (!name || !imported) return null;
+    const { internal, target } = resolveImport(file.path, imported.from, root);
+    return { name, module: internal ? target.replace(/\.(js|ts)$/, "") : target };
+  };
+  return (file.defaultArray ?? [])
+    .filter(({ chain }) => chain.length === 1 && (chain[0] === "when" || chain[0] === "share"))
+    .map(({ chain: [call], source, subject, constructed }) => ({
+      shares: call === "share",
+      source,
+      event: named(subject),
+      gives: constructed.map(named).filter(/** @returns {given is Named} */ given => given !== null)
+    }));
+}
 
 /** @type {(specifier: string, ...names: string[]) => boolean} */
 export const isPackage = (specifier, ...names) => names.some(name => specifier === name || specifier.startsWith(`${name}/`));

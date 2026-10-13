@@ -52,7 +52,11 @@ export class Container {
   private readonly built = new Map<Key, unknown>();
 
   constructor(bindings: readonly Binding[] = [], private readonly parent?: Container) {
-    for (const binding of bindings) this.bindings.set(binding.key, binding);
+    for (const binding of bindings) {
+      // A di.ts that gives something else would lose it without a word: the kernel refuses it when it starts.
+      if (!isKey((binding as { key?: unknown } | undefined)?.key)) throw new Error(`A di.ts gives bindings, made with bind(Key).to(…), .toValue(…) or .toFactory(…): ${JSON.stringify(binding) ?? typeof binding} is not one`);
+      this.bindings.set(binding.key, binding);
+    }
   }
 
   /** A container whose bindings come first, and which asks this container for the others. */

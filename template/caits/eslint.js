@@ -25,6 +25,21 @@ export default tseslint.config(
       "no-empty-pattern": ["error", { allowObjectPatternsAsParameters: true }]
     }
   },
+  // A context map translates an event into others: what the new events hold comes from the event that it reads (and, in the backend,
+  // from its envelope), never from the clock, from chance, from the page or from a state that the map would keep.
+  {
+    files: ["src/*/*/context-map.ts"],
+    rules: {
+      "no-restricted-globals": ["error", ...["window", "document", "globalThis", "self", "localStorage", "sessionStorage", "navigator", "location", "fetch", "crypto", "performance", "process", "setTimeout", "setInterval", "queueMicrotask"]
+        .map(name => ({ name, message: "a context map reads only the event that it translates: the event of the context holds what the new events need" }))],
+      "no-restricted-properties": ["error", ...[["Date", "now"], ["Math", "random"]]
+        .map(([object, property]) => ({ object, property, message: "a context map reads only the event that it translates: the event of the context holds when and what" }))],
+      "no-restricted-syntax": ["error",
+        { selector: "NewExpression[callee.name='Date'][arguments.length=0]", message: "a context map reads only the event that it translates: the event of the context holds when" },
+        { selector: "Program > VariableDeclaration[kind!='const'], Program > ExportNamedDeclaration > VariableDeclaration[kind!='const']", message: "a context map keeps no state: each line gives the new events from the event alone" }
+      ]
+    }
+  },
   {
     files: ["test/**/*.ts", "src/**/*.test.ts", "src/**/*.contract.ts", "src/**/test.di.ts"],
     rules: { "@typescript-eslint/unbound-method": "off", "@typescript-eslint/no-unsafe-assignment": "off", "@typescript-eslint/no-unsafe-member-access": "off", "@typescript-eslint/no-unsafe-argument": "off", "@typescript-eslint/no-unsafe-call": "off", "@typescript-eslint/require-await": "off", "@typescript-eslint/no-empty-function": "off" }

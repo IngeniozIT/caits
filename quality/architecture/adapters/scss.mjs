@@ -31,7 +31,7 @@ export function readScss(path, text, paths) {
     if (isIn(dirname(path), specifier, paths)) return `./${specifier}`;
     return isIn(STYLE_FOLDER, specifier, paths) ? `/${posix.join(STYLE_FOLDER, specifier)}` : specifier;
   });
-  return { imports, exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [] };
+  return { imports, imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [] };
 }
 
 /**

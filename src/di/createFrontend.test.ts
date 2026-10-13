@@ -33,17 +33,33 @@ const store: StoreDefinition<string[], Event> = {
 const context: FrontendModules = {
   bindings: [bind(Echo).to(LoudEcho)],
   useCases: [{ input: Ping, handler: PingHandler }],
-  store
+  store,
+  map: []
 };
 const quiet: Fetcher = () => Promise.resolve(new Response());
 
+/** The store of a frontend whose context has one. */
+function storeOf<S>(frontend: { store: S | undefined }): S {
+  if (!frontend.store) throw new Error("the context has a store");
+  return frontend.store;
+}
+
 describe("a frontend built by the kernel", () => {
+  test("a context without a store gives its views its EventPublisher only", () => {
+    const frontend = createFrontend({ bindings: [], useCases: [], map: [] }, quiet);
+
+    expect(frontend.store).toBeUndefined();
+    expect(() => frontend.events.publish({ type: "asked", text: "a" })).not.toThrow();
+  });
+
   test("gives the views its EventPublisher and its store, nothing else", () => {
     expect(Object.keys(createFrontend(context, quiet))).toEqual(["events", "store"]);
   });
 
   test("an event of a view goes through the store, the message bus and the handler, and the answer comes back to the store", () => {
-    const { events, store: built } = createFrontend(context, quiet);
+    const frontend = createFrontend(context, quiet);
+    const { events } = frontend;
+    const built = storeOf(frontend);
 
     events.publish({ type: "asked", text: "hi" });
 
@@ -57,7 +73,9 @@ describe("a frontend built by the kernel", () => {
   });
 
   test("the bindings it is given replace those of its di.ts", () => {
-    const { events, store: built } = createFrontend(context, quiet, [bind(Echo).toValue({ say: () => "replaced" })]);
+    const frontend = createFrontend(context, quiet, [bind(Echo).toValue({ say: () => "replaced" })]);
+    const { events } = frontend;
+    const built = storeOf(frontend);
 
     events.publish({ type: "asked", text: "hi" });
 
@@ -74,11 +92,13 @@ describe("a frontend built by the kernel", () => {
 
     first.events.publish({ type: "asked", text: "hi" });
 
-    expect(second.store.getState()).toEqual([]);
+    expect(storeOf(second).getState()).toEqual([]);
   });
 
   test("with its message bus, for the tests of the application: a DTO goes to the handler, and its events reach the store", async () => {
-    const { bus, store: built } = createFrontendWithBus(context, quiet);
+    const frontend = createFrontendWithBus(context, quiet);
+    const { bus } = frontend;
+    const built = storeOf(frontend);
 
     await bus.send(new Ping("hi"));
 
@@ -86,7 +106,9 @@ describe("a frontend built by the kernel", () => {
   });
 
   test("a test reads a dependency by its token, and gives the one that the handlers use from now on, even after they used their own", async () => {
-    const { bus, store: built, get, use } = createFrontendWithBus(context, quiet);
+    const frontend = createFrontendWithBus(context, quiet);
+    const { bus, get, use } = frontend;
+    const built = storeOf(frontend);
     await bus.send(new Ping("hi"));
     expect(get(Echo).say("ho")).toBe("HO");
 

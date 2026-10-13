@@ -15,9 +15,11 @@ A CAITS project (Clean Architecture In TypeScript): a Marko app with a backend a
 - Domain: entities, value objects, errors, domain events, and ports (`domain/port/<port>/`), each with its contract (`<Port>.contract.ts`).
 - Application: one folder per use case, `command/<use-case>/` or `query/<use-case>/`, with its DTOs, its handler and its test.
 - Infra: the adapters of the ports, in `infra/<port>/`. The test of each adapter runs the contract of its port.
-- Presentation: the controllers in the backend; the views and the store in the frontend.
-- Dependencies point to the domain. A context imports its own files with `#context/`, never with `../`.
-- `src/routes/` holds the pages and the HTTP handlers: a page places views, a handler gives the request to a controller.
+- Presentation: the controllers in the backend. In the frontend: the views, which the routes place; the components, `presentation/component/<component>/`, the parts that the views place; and the store, if the context has use cases. A view and a component take the frontend of their context only, publish its events and read its store. A view imports no other view, and a component no view.
+- The contexts talk through the context shared, `src/backend/shared/` and `src/frontend/shared/`, and their context map, `context-map.ts` beside their di.ts. A handler (in the frontend, also a view or a component) publishes an event of its context; the context map, `share(Event, event => [...])`, turns it into events of shared on the shared bus (the event of the context holds what they need). The context map of each context that hears it, `when(Event, event => [...])`, turns it into input DTOs of the context (backend) or into events of the context (frontend). Each line goes one way, reads only its event, and the lines make no cycle. A context names only itself and shared, never another context: only its context map imports the events of shared.
+- A component of the frontend context shared is a Marko tag, `component/<name>/index.marko`: a context places it by its name (`<badge>`), and `src/frontend/marko.json` gives Marko their folder.
+- Dependencies point to the domain. A context imports its own files with `#context/`, and the context shared of its side with `#shared/` (backend) or `#frontend-shared/` (frontend), never with `../`.
+- `src/routes/` holds the pages and the HTTP handlers, and no logic and no test: a page places views, a handler gives the request to a controller. A document that the pages give in another format than HTML (a sitemap, a feed) has its route in a folder named after its file, `` `sitemap.xml`/+handler.ts ``, which gives the GET of a view. The code that a test reads lives in a context.
 
 ## Rules
 

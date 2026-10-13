@@ -7,7 +7,7 @@ declare module "virtual:kernel/backend" {
   export const dtos: Modules;
   export const handlers: Modules;
   export const controllers: Modules;
-  export const map: Record<string, Translation[]>;
+  export const maps: Record<string, Translation[]>;
 }
 
 declare module "virtual:kernel/backend-test" {
@@ -17,12 +17,14 @@ declare module "virtual:kernel/backend-test" {
 
 declare module "virtual:kernel/frontend" {
   import type { Binding } from "@ingenioz-it/caits/di/Container";
+  import type { Line } from "@ingenioz-it/caits/messaging/FrontendContextMap";
   import type { StoreDefinition } from "@ingenioz-it/caits/state/createStore";
   type Modules = Record<string, Record<string, unknown>>;
   export const bindings: Record<string, readonly Binding[]>;
   export const dtos: Modules;
   export const handlers: Modules;
   export const stores: Record<string, StoreDefinition<unknown, unknown>>;
+  export const maps: Record<string, readonly Line[]>;
 }
 
 declare module "virtual:kernel/frontend-test" {

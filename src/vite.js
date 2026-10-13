@@ -61,14 +61,15 @@ const CONTEXT_MODULES = {
     ["dtos", "backend/*/application/*/*/*.dto.ts"],
     ["handlers", "backend/*/application/*/*/*.handler.ts"],
     ["controllers", "backend/*/presentation/*/*.controller.ts"],
-    ["map", "backend/context-map.ts", true]
+    ["maps", "backend/*/context-map.ts", true]
   ],
   "virtual:kernel/backend-test": [["bindings", "backend/*/test.di.ts", true]],
   "virtual:kernel/frontend": [
     ["bindings", "frontend/*/di.ts", true],
     ["dtos", "frontend/*/application/*/*/*.dto.ts"],
     ["handlers", "frontend/*/application/*/*/*.handler.ts"],
-    ["stores", "frontend/*/presentation/store/*Store.ts", true]
+    ["stores", "frontend/*/presentation/store/*Store.ts", true],
+    ["maps", "frontend/*/context-map.ts", true]
   ],
   "virtual:kernel/frontend-test": [["bindings", "frontend/*/test.di.ts", true]]
 };
@@ -102,9 +103,15 @@ function contexts(source) {
       // Vite processes the package as the code of the project, also when it is installed: it holds TypeScript and imports these modules.
       ssr: { noExternal: [KERNEL] },
       optimizeDeps: { exclude: [KERNEL] },
-      // The shortcut #shared leads to the backend context shared from every file (the tsconfig.json of the project says it to TypeScript).
-      // Vite reads an alias before the "imports" of the package.json of a context (#context), which cannot lead out of the context.
-      resolve: { alias: [{ find: /^#shared\//, replacement: `${source}/backend/shared/` }] }
+      // The shortcut #shared leads to the backend context shared from every file, and #frontend-shared to the frontend context shared
+      // (the tsconfig.json of the project says it to TypeScript). Vite reads an alias before the "imports" of the package.json of a
+      // context (#context), which cannot lead out of the context.
+      resolve: {
+        alias: [
+          { find: /^#shared\//, replacement: `${source}/backend/shared/` },
+          { find: /^#frontend-shared\//, replacement: `${source}/frontend/shared/` }
+        ]
+      }
     }),
     configResolved: config => { root = config.root; },
     configureServer: server => {

@@ -28,7 +28,7 @@ export function checkArchitecture(root, sources, rules) {
   const paths = new Set(sources.map(({ path }) => path));
   /** @type {(path: string, text: string) => import("./architecture/facts.mjs").Facts} */
   const read = (path, text) => {
-    if (path.endsWith(".marko")) return readMarko(join(root, path), text);
+    if (path.endsWith(".marko")) return readMarko(join(root, path), text, root);
     return path.endsWith(".scss") ? readScss(path, text, paths) : readTypeScript(path, text);
   };
   /** @type {File[]} */

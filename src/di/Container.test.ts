@@ -51,6 +51,13 @@ class Shop {
 }
 
 describe("a container", () => {
+  test.for([["a text", "Stryker was here", '"Stryker was here"'], ["nothing", undefined, "undefined"], ["an object without a key", {}, "{}"]])(
+    "refuses %s in place of a binding: a di.ts that gives one would lose it without a word",
+    ([, entry, shown]) => {
+      expect(() => new Container([entry] as never)).toThrow(`A di.ts gives bindings, made with bind(Key).to(…), .toValue(…) or .toFactory(…): ${shown as string} is not one`);
+    }
+  );
+
   test("builds a class with its dependencies, and with the dependencies of these", () => {
     const car = new Container([bind(Clock).to(FixedClock)]).get(Car);
     expect(car.engine).toBeInstanceOf(Engine);

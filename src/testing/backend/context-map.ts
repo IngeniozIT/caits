@@ -1,7 +1,10 @@
 import { test as base } from "vitest";
 import { createTestBackendApplication, type TestBackendApplication } from "./applications.js";
 
-/** Everything a test of the context map imports. `test` checks the Input DTOs that the `ContextMap` gives for an Event. */
+/**
+ * Everything a test of the context map imports. `test` checks what the `ContextMap` gives: the input DTOs for an event of shared
+ * (`inputsFor`), the events of shared for an event of the context (`eventsFor`).
+ */
 export { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 export { ContextMap } from "../../messaging/ContextMap.js";
 export type { TestBackendApplication } from "./applications.js";

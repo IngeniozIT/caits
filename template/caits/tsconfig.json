@@ -10,7 +10,7 @@
     "noEmit": true,
     "noImplicitOverride": true,
     "noUnusedLocals": true,
-    "paths": { "#shared/*": ["../../src/backend/shared/*"] },
+    "paths": { "#shared/*": ["../../src/backend/shared/*"], "#frontend-shared/*": ["../../src/frontend/shared/*"] },
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,

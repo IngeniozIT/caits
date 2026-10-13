@@ -1,4 +1,4 @@
-import { adapterOf, frontendsOf, importedModules, isCore, isMarko, isNode, isPackage, kebab, kernelPathOf, locate, portOf, typeOfEvent } from "@ingenioz-it/caits/quality/architecture";
+import { adapterOf, frontendsOf, givesSharedTags, importedModules, isCore, isMarko, isNode, isPackage, kebab, kernelPathOf, linesOf, locate, portOf, typeOfEvent } from "@ingenioz-it/caits/quality/architecture";
 
 /** @import { Rule } from "@ingenioz-it/caits/quality/architecture" */
 
@@ -191,11 +191,11 @@ export const rules = [
   },
   {
     name: "frontend-presentation-shape",
-    description: "The presentation of a frontend context holds only its views (one folder per view), its store and the type of its frontend. The pages are in the routes.",
+    description: "The presentation of a frontend context holds only its views (one folder per view), its components (one folder per component: what its views share), its store and the type of its frontend. The pages are in the routes.",
     on: "file",
     check: ({ path }) => /^src\/frontend\/[^/]+\/presentation\//.test(path)
-      && !/^src\/frontend\/[^/]+\/presentation\/(view\/[a-z0-9-]+\/[^/]+|store\/[a-z]\w*Store\.ts|[A-Z]\w*Frontend\.ts)$/.test(path)
-      && "a frontend presentation holds only view/{view}/ with the files that only this View uses, store/{context}Store.ts, {Context}Frontend.ts: the pages live in the routes"
+      && !/^src\/frontend\/[^/]+\/presentation\/((view|component)\/[a-z0-9-]+\/[^/]+|store\/[a-z]\w*Store\.ts|[A-Z]\w*Frontend\.ts)$/.test(path)
+      && "a frontend presentation holds only view/{view}/ with the files that only this View uses, component/{component}/ with the files of a component that its views share, store/{context}Store.ts, {Context}Frontend.ts: the pages live in the routes"
   },
   {
     name: "zod-in-presentation",
@@ -229,13 +229,32 @@ export const rules = [
   },
   {
     name: "views-take-own-frontend",
-    description: "A view takes only the frontend of its own context, with frontendOf. The contexts of the frontend do not share their frontends.",
+    description: "A view or a component takes only the frontend of its own context, with frontendOf. The contexts of the frontend do not share their frontends, not even the one of shared: to tell the other contexts, a view publishes an event of its context, and the context map shares it as an event of shared.",
     on: "file",
     production: true,
     check: file => {
       const where = locate(file.path);
       return where.kind === "layer" && where.side === "frontend"
-        && frontendsOf(file).filter(context => context !== where.context).map(context => `a context takes only its own frontend (${where.context}), not the one of ${context}`);
+        && frontendsOf(file).filter(context => context !== where.context)
+          .map(context => `a context takes only its own frontend (${where.context}), not the one of ${context}: to tell the other contexts, its context map shares an event of its own`);
+    }
+  },
+  {
+    name: "components-import-no-view",
+    description: "A component of the frontend (presentation/component/) is a part of the views: it imports no view, of its context or of the context shared. It may take the frontend of its context, publish its events and read its store, as a view does.",
+    on: "import",
+    check: ({ file, target }) => /^src\/frontend\/[^/]+\/presentation\/component\//.test(file.path) && /^src\/frontend\/[^/]+\/presentation\/view\//.test(target)
+      && "a component imports no view: the routes place the views, and the views place the components"
+  },
+  {
+    name: "views-import-no-view",
+    description: "A view of the frontend imports nothing from another view. What views share is a component (presentation/component/); the routes place the views side by side.",
+    on: "import",
+    check: ({ file, target }) => {
+      const view = /^src\/frontend\/([^/]+)\/presentation\/view\/([^/]+)\//.exec(file.path);
+      const other = /^src\/frontend\/([^/]+)\/presentation\/view\/([^/]+)\//.exec(target);
+      return view && other && view[1] === other[1] && view[2] !== other[2]
+        && `a view imports no other view (${other[2]}): what views share is a component, in presentation/component/`;
     }
   },
 
@@ -304,20 +323,139 @@ export const rules = [
 
   {
     name: "sides-hold-contexts",
-    description: "src/backend holds only the contexts and the context map (context-map.ts and its tests). src/frontend holds only the contexts.",
+    description: "src/backend and src/frontend hold only the contexts: each context has its context map. src/backend holds the integration tests of the whole backend too (*.integration.test.ts).",
     on: "file",
     check: ({ path }) => {
       const [, side, inside] = /^src\/(backend|frontend)\/([^/]+)$/.exec(path) ?? [];
-      return side && (side === "frontend" || !/^context-map(\.test|\.integration\.test)?\.ts$/.test(inside))
-        && `src/${side} holds only the contexts${side === "backend" ? " and the context map (context-map.ts and its tests)" : ""}`;
+      return side && (side === "frontend" || !/^[\w.-]+\.integration\.test\.ts$/.test(inside))
+        && `src/${side} holds only the contexts${side === "backend" ? ", and the integration tests of the whole backend (*.integration.test.ts)" : ""}: each context has its context map`;
     }
   },
   {
     name: "context-content",
-    description: "A context holds only its four layers (domain, application, infra, presentation), its di.ts and its test.di.ts (and its package.json, which gives the shortcut #context).",
+    description: "A context holds only its four layers (domain, application, infra, presentation), its di.ts and its test.di.ts (and its package.json, which gives the shortcut #context), and its context map, context-map.ts and its test: the events of the context shared that it hears, and the events of its own that it shares.",
     on: "file",
-    check: ({ path }) => /^src\/(backend|frontend)\/[^/]+\//.test(path) && !/^src\/(backend|frontend)\/[^/]+\/((domain|application|infra|presentation)\/|(di|test\.di)\.ts$)/.test(path)
-      && "a context holds only domain, application, infra and presentation, with its di.ts and test.di.ts"
+    check: ({ path }) => /^src\/(backend|frontend)\/[^/]+\//.test(path)
+      && !/^src\/(backend|frontend)\/[^/]+\/((domain|application|infra|presentation)\/|(di|test\.di|context-map(\.test)?)\.ts$)/.test(path)
+      && "a context holds only domain, application, infra and presentation, with its di.ts, its test.di.ts and its context-map.ts"
+  },
+  {
+    name: "context-map-translates-shared",
+    description: "The context map of a context translates between its context and the context shared. It turns the events of shared into what its context reacts to: input DTOs of its context in the backend, events of its context in the frontend. It also turns the events of its context that it shares into events of shared. It imports only those, the events of its context and of shared, and the values of the domain.",
+    on: "import",
+    check: ({ file, to, target }) => {
+      const [, side, context] = /^src\/(backend|frontend)\/([^/]+)\/context-map\.ts$/.exec(file.path) ?? [];
+      if (!side || to.kind !== "layer" || to.side !== side || (to.context !== context && to.context !== "shared")) return;
+      const reads = side === "backend"
+        ? to.layer === "domain" || (to.context === context && /\/application\/(command|query)\/[^/]+\/[^/]+\.dto\.(js|ts)$/.test(target))
+        : to.layer === "domain" || /\/application\/event\//.test(target);
+      return !reads && (side === "backend"
+        ? "a context map translates between the events of shared and those of its context, which it turns into its inputs: it imports only events, the input DTOs of its context, and the values of the domain"
+        : "a context map translates between the events of shared and those of its context: it imports only events, and the values of the domain");
+    }
+  },
+  {
+    name: "context-map-holds-lines",
+    description: "A context map has one export, the list of its lines: `export default [when(Event, event => […]), share(Event, event => […])]`. It takes when and share from the kernel, for its side: @ingenioz-it/caits/messaging/ContextMap in the backend, @ingenioz-it/caits/messaging/FrontendContextMap in the frontend. The kernel reads the list.",
+    on: "file",
+    modules: { backend: "@ingenioz-it/caits/messaging/ContextMap", frontend: "@ingenioz-it/caits/messaging/FrontendContextMap" },
+    /** @this {{ modules: Record<string, string> }} */
+    check({ path, exports, defaultArray, imported }) {
+      const side = /^src\/(backend|frontend)\/[^/]+\/context-map\.ts$/.exec(path)?.[1];
+      if (!side) return;
+      if (exports.length !== 1 || !defaultArray) return "a context map has one export, its lines: `export default [when(Event, event => […]), share(Event, event => […])]`";
+      const module = this.modules[side];
+      return [
+        ...defaultArray.filter(({ chain }) => chain.length !== 1 || (chain[0] !== "when" && chain[0] !== "share"))
+          .map(({ source }) => `a context map lists its lines, each made with when(Event, event => […]) or share(Event, event => […]): ${source}`),
+        ...imported.filter(({ name, from }) => (name === "when" || name === "share") && from !== module)
+          .map(({ name, from }) => `a context map of the ${side} takes ${name} from ${module}, not from ${from}`)
+      ];
+    }
+  },
+  {
+    name: "context-map-line-direction",
+    description: "Each line of a context map goes one way. share(Event, …) starts from an event of its context, that a handler publishes (in the frontend, also a view or a component), and gives events of shared. when(Event, …) starts from an event of shared, which comes on the shared bus, and gives what its context reacts to: its input DTOs in the backend, its events in the frontend. The kernel reads the lines that share on the events of the context, and those that hear on the shared bus: a line that goes the other way never starts, and its test passes all the same.",
+    on: "file",
+    check(file, { root }) {
+      const [, side, context] = /^src\/(backend|frontend)\/([^/]+)\/context-map\.ts$/.exec(file.path) ?? [];
+      if (!side) return;
+      const events = side === "backend" ? "domain/event" : "application/event";
+      const own = `src/${side}/${context}/${events}/`;
+      const shared = `src/${side}/shared/${events}/`;
+      const reacts = side === "backend" ? `src/backend/${context}/application/` : own;
+      /** @type {(module: string) => boolean} */
+      const isMessage = module => /\/(domain|application)\/event\/|\/application\/(command|query)\//.test(module);
+      return linesOf(file, root).flatMap(({ shares, event, gives }) => {
+        const wrongStart = event && !event.module.startsWith(shares ? own : shared)
+          ? [shares
+            ? `share(${event.name}, …) starts from an event of its context, which ${side === "backend" ? "a handler" : "a view"} publishes: ${event.name} ${event.module.startsWith(shared) ? "is an event of shared, which when(…) hears" : "is not one"}`
+            : `when(${event.name}, …) starts from an event of shared, which comes on the shared bus: ${event.name} ${event.module.startsWith(own) ? "is an event of its context, which share(…) shares" : "is not one"}`]
+          : [];
+        const wrongGives = gives.filter(({ module }) => isMessage(module) && !module.startsWith(shares ? shared : reacts))
+          .map(({ name }) => shares ? `share(…) gives events of shared: ${name} is not one` : `when(…) gives ${side === "backend" ? "input DTOs" : "events"} of its context: ${name} is not one`);
+        return [...wrongStart, ...wrongGives];
+      });
+    }
+  },
+  {
+    name: "context-maps-without-cycle",
+    description: "In the frontend, a bus carries an event at once: a line when(Shared, …) that gives Own, and a line share(Own, …) that gives Shared, would carry them without end, and the page would stop. The context maps of the frontend make no cycle of events, in one map or across several. In the backend, a cycle goes through a handler, which the maps do not show.",
+    on: "project",
+    check({ files, root }) {
+      /** @type {Map<string, { to: string; map: string }[]>} */
+      const edges = new Map();
+      /** @type {(module: string) => boolean} */
+      const isShared = module => module.startsWith("src/frontend/shared/");
+      for (const file of files) {
+        if (!/^src\/frontend\/[^/]+\/context-map\.ts$/.test(file.path)) continue;
+        for (const { event, gives } of linesOf(file, root)) {
+          if (!event) continue;
+          // An event goes from shared to the context, or from the context to shared: a line that goes otherwise never starts.
+          for (const { module } of gives.filter(given => /\/application\/event\//.test(given.module) && isShared(given.module) !== isShared(event.module))) {
+            edges.set(event.module, [...edges.get(event.module) ?? [], { to: module, map: file.path }]);
+          }
+        }
+      }
+      /** @type {Map<string, { file: string; message: string }>} */
+      const cycles = new Map();
+      /** @type {(path: { module: string; map: string }[]) => void} */
+      const follow = path => {
+        for (const { to, map } of edges.get(path[path.length - 1].module) ?? []) {
+          const steps = [...path.slice(1), { module: to, map }];
+          if (to === path[0].module) {
+            const first = steps.reduce((least, step, index) => step.module < steps[least].module ? index : least, 0);
+            const cycle = [...steps.slice(first), ...steps.slice(0, first)];
+            const names = [...cycle, cycle[0]].map(({ module }) => module.split("/").pop());
+            cycles.set(names.join(" → "), { file: cycle[0].map, message: `the context maps make a cycle, which the buses would carry without end: ${names.join(" → ")}` });
+          } else if (!path.some(step => step.module === to)) follow([...path, { module: to, map }]);
+        }
+      };
+      for (const module of edges.keys()) follow([{ module, map: "" }]);
+      return [...cycles.values()];
+    }
+  },
+  {
+    name: "shared-events-in-map",
+    description: "A context talks to the other contexts only through its context map: a handler (in the frontend, also a view or a component) publishes an event of its context, the map shares it as an event of shared on the shared bus, and the map of each context that hears it turns it into what its context reacts to. Thus, in a context other than shared, only the context map imports the events of shared: those of the backend, in domain/event/, and those of the frontend, in application/event/.",
+    on: "import",
+    // The layers that could import them, but the context map; layer-direction refuses the others already.
+    events: {
+      backend: { folder: /^src\/backend\/shared\/domain\/event\//, layers: ["domain", "application", "infra", "presentation", "di"], publisher: "a handler" },
+      frontend: { folder: /^src\/frontend\/shared\/application\/event\//, layers: ["application", "infra", "presentation"], publisher: "a view" }
+    },
+    /** @this {{ events: Record<string, { folder: RegExp; layers: string[]; publisher: string }> }} */
+    check({ from, target }) {
+      const events = from.kind === "layer" && from.context !== "shared" && this.events[from.side];
+      return events && events.layers.includes(from.layer) && events.folder.test(target)
+        && `in the ${from.side}, only the context map imports the events of shared: ${events.publisher} publishes an event of its context, and the map shares it as an event of shared`;
+    }
+  },
+  {
+    name: "shared-hears-no-context",
+    description: "The context shared, in the backend and in the frontend, has no context map: it hears no other context, and its events are on the shared bus already. The contexts hear it.",
+    on: "file",
+    check: ({ path }) => /^src\/(backend|frontend)\/shared\/context-map\.ts$/.test(path) && "the context shared hears no other context: it has no context map"
   },
   {
     name: "context-has-di",
@@ -330,23 +468,44 @@ export const rules = [
     }
   },
   {
+    name: "shared-components-are-tags",
+    description: "A component of the frontend context shared is a Marko tag: its folder holds its index.marko, and src/frontend/marko.json gives Marko the folder of these tags, { \"tags-dir\": \"./shared/presentation/component\" }. A context places it by its name, <badge>: Marko finds it, where an import of its file would not build.",
+    on: "project",
+    check: ({ root, paths }) => {
+      const folders = new Set([...paths].map(path => /^src\/frontend\/shared\/presentation\/component\/[a-z0-9-]+(?=\/)/.exec(path)?.[0]).filter(folder => folder !== undefined));
+      const untagged = [...folders].filter(folder => !paths.has(`${folder}/index.marko`))
+        .map(folder => ({ file: folder, message: `a component of the frontend context shared is a Marko tag, which its index.marko holds: ${folder}/index.marko` }));
+      return folders.size > 0 && !givesSharedTags(root)
+        ? [...untagged, { file: "src/frontend/marko.json", message: 'the components of the frontend context shared are Marko tags: src/frontend/marko.json gives Marko their folder, { "tags-dir": "./shared/presentation/component" }' }]
+        : untagged;
+    }
+  },
+  {
+    name: "shared-components-placed-by-tag",
+    description: "A context of the frontend places a component of the context shared by its tag (<badge>), and does not import its file: Marko reads an import of a template from the package.json of the context, whose shortcuts lead only into it.",
+    on: "import",
+    check: ({ from, specifier, target }) => from.kind === "layer" && from.context !== "shared" && specifier.startsWith("#")
+      && /^src\/frontend\/shared\/presentation\/component\/[a-z0-9-]+\/[^/]+\.marko$/.test(target)
+      && `a context places a component of shared by its tag, <${target.split("/")[5]}>: Marko does not build an import of its file`
+  },
+  {
     name: "imports-by-shortcut",
-    description: "In src, an import does not go up a folder (../). A context imports its own files with #context/ and the context shared with #shared/; a route imports the contexts with #backend/ and #frontend/. Thus an import does not change when its file moves. A stylesheet loads only the files of its folder: Sass reads # as the start of a fragment, and a View reads the values of the theme as CSS variables.",
+    description: "In src, an import does not go up a folder (../). A context imports its own files with #context/, and the context shared of its side with #shared/ in the backend, #frontend-shared/ in the frontend; a route imports the contexts with #backend/ and #frontend/. Thus an import does not change when its file moves. A stylesheet loads only the files of its folder: Sass reads # as the start of a fragment, and a View reads the values of the theme as CSS variables.",
     on: "file",
     check: ({ path, imports }) => path.startsWith("src/")
       && imports.filter(specifier => specifier.split("/").includes(".."))
         .map(specifier => path.endsWith(".scss")
           ? `a stylesheet does not go up a folder: it loads the files of its folder, and a View reads the values of the theme as CSS variables (${specifier})`
-          : `an import does not go up a folder: use #context/ in a context, #shared/ for shared, #backend/ or #frontend/ in a route (${specifier})`)
+          : `an import does not go up a folder: use #context/ in a context, #shared/ or #frontend-shared/ for shared, #backend/ or #frontend/ in a route (${specifier})`)
   },
   {
     name: "contexts-isolated",
-    description: "A context does not import another context of its side, except the backend context shared. Backend contexts talk through events and the context map; frontend contexts do not talk: a route places their views side by side.",
+    description: "A context does not import another context of its side, except the context shared of its side. The contexts talk through the shared bus: the context map of a context shares an event of the context as an event of shared, and the context map of each context that hears it turns it into what it reacts to, input DTOs of its own in the backend, events of its own in the frontend. In the frontend, a route places the views of several contexts side by side.",
     on: "import",
     check: ({ from, to }) => from.kind === "layer" && to.kind === "layer" && to.side === from.side && to.layer !== "di" && to.context !== from.context && to.context !== "shared"
       && (from.side === "backend"
-        ? "a context never imports another context: it publishes events, and the context map turns them into the inputs of the others"
-        : "a context never imports another context: in the frontend, a route places the views of several contexts side by side")
+        ? "a context never imports another context: its context map shares an event of its own as an event of shared, and the context map of each context that hears it turns it into inputs of its own"
+        : "a context never imports another context: in the frontend, its context map shares an event of its own as an event of shared, and the context map of each context that hears it turns it into its own events")
   },
   {
     name: "sides-apart",
@@ -357,11 +516,11 @@ export const rules = [
   },
   {
     name: "layer-direction",
-    description: "In a context, and from a context to shared, each layer imports only the layers that it may use. The domain imports the domain; the application adds the domain; the presentation adds the application; the infra imports the domain (and the application in the frontend); the di.ts imports the domain and the infra.",
+    description: "In a context, and from a context to shared, each layer imports only the layers that it may use. The domain imports the domain; the application adds the domain; the presentation adds the application; the infra imports the domain (and the application in the frontend); the di.ts imports the domain and the infra; the context map imports the application and the domain. No layer imports the context map: the kernel reads it.",
     on: "import",
     allowed: {
-      backend: { domain: ["domain"], application: ["application", "domain"], presentation: ["presentation", "application", "domain"], infra: ["infra", "domain"], di: ["domain", "infra"] },
-      frontend: { domain: ["domain"], application: ["application", "domain"], presentation: ["presentation", "application", "domain"], infra: ["infra", "application", "domain"], di: ["domain", "infra"] }
+      backend: { domain: ["domain"], application: ["application", "domain"], presentation: ["presentation", "application", "domain"], infra: ["infra", "domain"], di: ["domain", "infra"], map: ["application", "domain"] },
+      frontend: { domain: ["domain"], application: ["application", "domain"], presentation: ["presentation", "application", "domain"], infra: ["infra", "application", "domain"], di: ["domain", "infra"], map: ["application", "domain"] }
     },
     /** @this {{ allowed: Record<string, Record<string, string[]>> }} */
     check({ from, to }) {
@@ -371,25 +530,9 @@ export const rules = [
   },
   {
     name: "contexts-without-routes",
-    description: "A context does not import the routes or the context map. The routes and the context map use the contexts, not the opposite.",
+    description: "A context does not import the routes. The routes use the contexts, not the opposite.",
     on: "import",
-    check: ({ from, to }) => from.kind === "layer" && (to.kind === "routes" || to.kind === "map") && "contexts never import routes or the context map"
-  },
-
-  // Context map: src/backend/context-map.ts, which turns the events of a context into the inputs of the others
-
-  {
-    name: "context-map-reads-events-and-dtos",
-    description: "The context map imports from the contexts only their domain events and their input DTOs. It turns an event of a context into the input of another context.",
-    on: "import",
-    check: ({ from, to, target }) => from.kind === "map" && to.kind === "layer" && !/\/domain\/event\/[^/]+$|\.dto\.(js|ts)$/.test(target)
-      && "the context map reads only the events (domain/event) and the input DTOs (*.dto.ts) of the contexts"
-  },
-  {
-    name: "context-map-without-routes",
-    description: "The context map does not import the routes.",
-    on: "import",
-    check: ({ from, to }) => from.kind === "map" && to.kind === "routes" && "the context map never imports routes"
+    check: ({ from, to }) => from.kind === "layer" && to.kind === "routes" && "contexts never import routes"
   },
 
   // Routes: the pages and the handlers of Marko Run
@@ -402,12 +545,13 @@ export const rules = [
   },
   {
     name: "frontend-routes-content",
-    description: "src/routes/_frontend holds the pages (+page.marko), the layouts (+layout.marko), in component/ the components that only these pages use, in style/ the stylesheets (SCSS) of the app, and next to a page or a layout its stylesheet.",
+    description: "src/routes/_frontend holds the pages (+page.marko), the layouts (+layout.marko), in component/ the components of Marko that only these pages use and their stylesheets, in style/ the stylesheets (SCSS) of the app, and next to a page or a layout its stylesheet. A document that the pages give in another format than HTML (a sitemap, a feed, llms.txt) has its route as a page has: a folder named after its file, `sitemap.xml`/+handler.ts, which only gives the GET of a view of a frontend context. The routes hold no logic and no test: the code that a test reads lives in a context, with its test.",
     on: "file",
-    check: ({ path }, { paths }) => path.startsWith("src/routes/_frontend/") && !/\/\+(page|layout)\.marko$/.test(path) && !/\/component\/[^/]+$/.test(path)
+    check: ({ path }, { paths }) => path.startsWith("src/routes/_frontend/") && !/\/\+(page|layout)\.marko$/.test(path) && !/\/component\/[^/]+\.(marko|scss)$/.test(path)
       && !/^src\/routes\/_frontend\/style\/([^/]+\/)*[^/]+\.scss$/.test(path)
       && !(path.endsWith(".scss") && ["+page.marko", "+layout.marko"].some(name => paths.has(`${path.slice(0, path.lastIndexOf("/"))}/${name}`)))
-      && "routes/_frontend holds +page.marko, +layout.marko, in component/ the components that only its pages use, in style/ the stylesheets of the app, and next to a page or a layout its stylesheet"
+      && !/\/`[\w-]+(\.[\w-]+)+`\/\+handler\.ts$/.test(path)
+      && "routes/_frontend holds +page.marko, +layout.marko, in component/ the components of Marko that only its pages use and their stylesheets, in style/ the stylesheets of the app, next to a page or a layout its stylesheet, and in a folder named after its file the route of a document (`sitemap.xml`/+handler.ts): the code that a test reads, and its test, live in a context"
   },
   {
     name: "backend-routes-content",
@@ -427,12 +571,6 @@ export const rules = [
     description: "A route imports only the presentation of the contexts of its side: the views for a page, the controllers for a handler.",
     on: "import",
     check: ({ from, to }) => from.kind === "routes" && to.kind === "layer" && to.side === from.side && to.layer !== "presentation" && "routes reach contexts through presentation"
-  },
-  {
-    name: "routes-without-context-map",
-    description: "A route does not import the context map. The kernel reads it.",
-    on: "import",
-    check: ({ from, to }) => from.kind === "routes" && to.kind === "map" && "routes never import the context map: the kernel reads it"
   },
   {
     name: "routes-take-no-frontend",

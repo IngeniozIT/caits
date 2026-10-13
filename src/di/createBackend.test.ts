@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { DomainEvent } from "../DomainEvent.js";
 import { Controller } from "../messaging/Controller.js";
 import type { EventPublisher } from "../messaging/EventPublisher.js";
-import { when } from "../messaging/ContextMap.js";
+import { share, when } from "../messaging/ContextMap.js";
 import { Input } from "../messaging/Input.js";
 import { MessageBus } from "../messaging/MessageBus.js";
 import { Token } from "../Token.js";
@@ -12,8 +12,10 @@ import type { BackendModules } from "./discover.js";
 import type { RequestContext } from "./RequestContext.js";
 
 class Greeted extends DomainEvent { constructor(readonly name: string) { super(); } }
+class Arrived extends DomainEvent { constructor(readonly name: string) { super(); } }
 class Greet extends Input<string> { constructor(readonly name: string) { super(); } }
 class Remember extends Input<string> { constructor(readonly name: string) { super(); } }
+class Announce extends Input<string> { constructor(readonly name: string) { super(); } }
 class Unknown extends Input<void> {}
 type Memory = string[];
 const Memory = new Token<Memory>();
@@ -40,19 +42,30 @@ class GreetController extends Controller<Greet, string> {
   protected toDto(request: Request): Greet { return new Greet(new URL(request.url).searchParams.get("name") ?? ""); }
   protected toResponse(output: string): Response { return new Response(output); }
 }
+class AnnounceHandler {
+  constructor(private events: EventPublisher<Arrived>) {}
+  execute(input: Announce): string {
+    this.events.publish(new Arrived(input.name));
+    return `announced ${input.name}`;
+  }
+}
 /** A memory that publishes: built once for its context, it cannot use the publisher of a request. */
 class NoisyMemory extends Array<string> {
   constructor(readonly events: EventPublisher<Greeted>) { super(); }
 }
 
+// Greeted is an event of the greeter, which its context map shares as Arrived, an event of the context shared, that the memory hears.
 const modules = (): BackendModules => ({
   shared: [bind(Greeting).toValue("Hello")],
   contexts: {
-    greeter: { bindings: [], useCases: [{ input: Greet, handler: GreetHandler }], controllers: [GreetController] },
-    memory: { bindings: [bind(Memory).toFactory(() => [])], useCases: [{ input: Remember, handler: RememberHandler }], controllers: [] }
-  },
-  map: [when(Greeted, event => [new Remember(event.name)])]
+    greeter: { bindings: [], useCases: [{ input: Greet, handler: GreetHandler }], controllers: [GreetController], map: [share(Greeted, event => [new Arrived(event.name)])] },
+    memory: { bindings: [bind(Memory).toFactory(() => [])], useCases: [{ input: Remember, handler: RememberHandler }], controllers: [], map: [when(Arrived, event => [new Remember(event.name)])] }
+  }
 });
+const withMaps = (maps: { greeter?: BackendModules["contexts"][string]["map"]; memory?: BackendModules["contexts"][string]["map"] }): BackendModules => {
+  const { contexts, ...rest } = modules();
+  return { ...rest, contexts: { greeter: { ...contexts.greeter, map: maps.greeter ?? contexts.greeter.map }, memory: { ...contexts.memory, map: maps.memory ?? contexts.memory.map } } };
+};
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -149,12 +162,12 @@ describe("a backend built from the bindings of its contexts", () => {
     const backend = createBackend(modules(), { nextEventId: () => "e1" });
     const seen: unknown[] = [];
     backend.subscribe(published => seen.push(published));
-    backend.publish(new Greeted("Ada"));
-    backend.redeliver({ event: new Greeted("Ada"), envelope: { eventId: "e1", correlationId: "req-3" } });
+    backend.publish(new Arrived("Ada"));
+    backend.redeliver({ event: new Arrived("Ada"), envelope: { eventId: "e1", correlationId: "req-3" } });
     await backend.settled();
     expect(seen).toEqual([
-      { event: new Greeted("Ada"), envelope: { eventId: "e1", correlationId: "system" } },
-      { event: new Greeted("Ada"), envelope: { eventId: "e1", correlationId: "req-3" } }
+      { event: new Arrived("Ada"), envelope: { eventId: "e1", correlationId: "system" } },
+      { event: new Arrived("Ada"), envelope: { eventId: "e1", correlationId: "req-3" } }
     ]);
     expect(backend.get(Memory)).toEqual(["Ada@system", "Ada@req-3"]);
   });
@@ -168,5 +181,103 @@ describe("a backend built from the bindings of its contexts", () => {
     await backend.settled();
     expect(seen).toEqual([expect.stringMatching(/^[0-9a-f-]{36}$/)]);
     expect(console).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("memory lost") as string }));
+  });
+
+  test("a context map gives only the inputs of its own context: one that gives the input of another context is reported, and sends nothing", async () => {
+    const reported: unknown[] = [];
+    const backend = createBackend(withMaps({ memory: [when(Arrived, event => [new Greet(event.name)])] }), { reportError: error => { reported.push(error); } });
+    const greeted: string[] = [];
+    backend.subscribe(({ event }) => greeted.push((event as Arrived).name));
+
+    await backend.send(new Greet("Ada"));
+    await backend.settled();
+
+    expect(greeted).toEqual(["Ada"]);
+    expect(reported).toEqual([new Error("the context map of memory gives Greet, an input of another context: a context map gives the inputs of its own context")]);
+  });
+});
+
+describe("the context maps of the backend", () => {
+  test("a handler publishes an event of its context: its context map shares it on the shared bus, in the request of the handler", async () => {
+    const backend = createBackend(modules(), { nextEventId: () => "e1" });
+    const told: unknown[] = [];
+    const seen: unknown[] = [];
+    backend.subscribeToContexts(event => told.push(event));
+    backend.subscribe(published => seen.push(published));
+
+    await backend.send(new Greet("Ada"), { correlationId: "req-1" });
+
+    expect(told).toEqual([new Greeted("Ada")]);
+    expect(seen).toEqual([{ event: new Arrived("Ada"), envelope: { eventId: "e1", correlationId: "req-1" } }]);
+  });
+
+  test("an event that the map of its context does not share stays in its context: no other context hears it", async () => {
+    const backend = createBackend(withMaps({ greeter: [], memory: [when(Greeted, event => [new Remember(event.name)])] }));
+    const seen: unknown[] = [];
+    backend.subscribe(published => seen.push(published));
+
+    await backend.send(new Greet("Ada"));
+    await backend.settled();
+
+    expect(seen).toEqual([]);
+    expect(backend.get(Memory)).toEqual([]);
+  });
+
+  test("a context map shares only the events of its own context", async () => {
+    const backend = createBackend(withMaps({ memory: [when(Arrived, event => [new Remember(event.name)]), share(Greeted, event => [new Arrived(`${event.name} again`)])] }));
+
+    await backend.send(new Greet("Ada"));
+    await backend.settled();
+
+    expect(backend.get(Memory)).toEqual(["Ada@system"]);
+  });
+
+  test("a line that shares hears nothing on the shared bus", async () => {
+    const reported: unknown[] = [];
+    const backend = createBackend(withMaps({ memory: [share(Arrived, () => [new Greeted("nobody")])] }), { reportError: error => { reported.push(error); } });
+
+    backend.publish(new Arrived("Ada"));
+    await backend.settled();
+
+    expect(backend.get(Memory)).toEqual([]);
+    expect(reported).toEqual([]);
+  });
+
+  test("a line that shares and fails is reported: the handler still answers, and nothing is shared", async () => {
+    const reported: unknown[] = [];
+    const backend = createBackend(withMaps({ greeter: [share(Greeted, () => { throw new Error("map down"); })] }), { reportError: error => { reported.push(error); } });
+    const seen: unknown[] = [];
+    backend.subscribe(published => seen.push(published));
+
+    expect(await backend.send(new Greet("Ada"))).toBe("Hello Ada");
+
+    expect(reported).toEqual([new Error("map down")]);
+    expect(seen).toEqual([]);
+  });
+
+  test("a test watches the events of the contexts until it stops", async () => {
+    const backend = createBackend(modules());
+    const told: unknown[] = [];
+    const stop = backend.subscribeToContexts(event => told.push(event));
+
+    await backend.send(new Greet("Ada"));
+    stop();
+    await backend.send(new Greet("Bob"));
+
+    expect(told).toEqual([new Greeted("Ada")]);
+  });
+
+  test("the handlers of the context shared publish its events on the shared bus: no context map shares them", async () => {
+    const { contexts, ...rest } = modules();
+    const announcer = { bindings: [], useCases: [{ input: Announce, handler: AnnounceHandler }], controllers: [], map: [] };
+    const backend = createBackend({ ...rest, contexts: { ...contexts, shared: announcer } }, { nextEventId: () => "e1" });
+    const seen: unknown[] = [];
+    backend.subscribe(published => seen.push(published));
+
+    expect(await backend.send(new Announce("Ada"), { correlationId: "req-1" })).toBe("announced Ada");
+    await backend.settled();
+
+    expect(seen).toEqual([{ event: new Arrived("Ada"), envelope: { eventId: "e1", correlationId: "req-1" } }]);
+    expect(backend.get(Memory)).toEqual(["Ada@req-1"]);
   });
 });

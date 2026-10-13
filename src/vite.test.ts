@@ -78,7 +78,7 @@ describe("the contexts, while the server runs (dev server, Vitest in watch mode)
     ["a DTO comes", "add", "/project/src/backend/notes/application/query/count-notes/count-notes.dto.ts"],
     ["a controller goes", "unlink", "/project/src/backend/notes/presentation/count-notes-http/count-notes-http.controller.ts"],
     ["the di.ts of a new context comes", "add", "/project/src/backend/notes/di.ts"],
-    ["the context map comes", "add", "/project/src/backend/context-map.ts"]
+    ["the context map of a context comes", "add", "/project/src/backend/notes/context-map.ts"]
   ])("when %s, Vite finds the files again, and Vitest runs again the tests that use them", ([, event, file]) => {
     const { watcher, changed, invalidated } = serverWithTheContexts();
 
@@ -108,6 +108,7 @@ describe("the contexts, while the server runs (dev server, Vitest in watch mode)
 
   test.for([
     ["a file that no module finds", "/project/src/backend/notes/domain/entity/Note.ts"],
+    ["a context map out of a context", "/project/src/backend/context-map.ts"],
     ["a file out of the source folder", "/project/test/backend/notes/di.ts"],
     ["a file of another project", "/other/src/backend/notes/di.ts"]
   ])("changes nothing when %s comes", ([, file]) => {
@@ -126,5 +127,17 @@ describe("the contexts, while the server runs (dev server, Vitest in watch mode)
 
     expect(invalidated).toEqual([]);
     expect(changed).toEqual(["/project/src/backend/notes/di.ts"]);
+  });
+});
+
+describe("the shortcuts of the contexts shared", () => {
+  test("#shared leads to the backend context shared, and #frontend-shared to the frontend context shared, from every file", () => {
+    const contexts = kernel().find(plugin => plugin.name === "kernel-contexts") as Plugin;
+    const { resolve } = (contexts.config as () => { resolve: { alias: { find: RegExp; replacement: string }[] } })();
+    const lead = (specifier: string) => resolve.alias.filter(({ find }) => find.test(specifier)).map(({ find, replacement }) => specifier.replace(find, replacement));
+
+    expect(lead("#shared/domain/value-object/Money.js")).toEqual(["/src/backend/shared/domain/value-object/Money.js"]);
+    expect(lead("#frontend-shared/presentation/component/badge/Badge.marko")).toEqual(["/src/frontend/shared/presentation/component/badge/Badge.marko"]);
+    expect(lead("#context/domain/entity/Note.js")).toEqual([]);
   });
 });

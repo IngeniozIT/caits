@@ -51,7 +51,7 @@ describe("the reading of a stylesheet", () => {
 
   test("gives no other fact: a stylesheet has no code", () => {
     expect(readScss(STYLESHEET, ".a { color: red; }\n", new Set())).toEqual({
-      imports: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: []
+      imports: [], imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: []
     });
   });
 });

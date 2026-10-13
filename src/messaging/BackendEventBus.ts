@@ -8,8 +8,9 @@ export type Published = { readonly event: DomainEvent; readonly envelope: Envelo
 const nextTurn = () => new Promise(resolve => { setTimeout(resolve, 0); });
 
 /**
- * Carries the events of the contexts. The context map turns each event into input DTOs, and each input goes to the context that
- * handles it. The publisher never waits for the reactions; every failure is reported.
+ * The shared bus: carries the events of shared that the context maps share. The context map of each context turns the events of shared
+ * that it hears into input DTOs of the context, and each input goes to it. The publisher never waits for the reactions; every failure is
+ * reported.
  */
 export class BackendEventBus {
   private inFlight = new Set<Promise<void>>();
@@ -34,7 +35,7 @@ export class BackendEventBus {
     void delivery.then(() => { this.inFlight.delete(delivery); });
   }
 
-  /** Watches every event the contexts publish. */
+  /** Watches every event on the shared bus. */
   subscribe(listener: (published: Published) => void): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };

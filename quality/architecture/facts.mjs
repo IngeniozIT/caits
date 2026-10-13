@@ -10,13 +10,18 @@
 /** @typedef {{ name: string | null; kind: string }} Export an exported name, and its kind */
 /** @typedef {{ name: string | null; readonly: boolean; value: string | null; asConst: boolean }} Property a property of a class */
 /** @typedef {{ name: string | null; exported: boolean; extends: string | null; implements: string[]; properties: Property[] }} Class */
-/** @typedef {{ chain: string[]; source: string }} Item an item of `export default [ … ]` */
+/**
+ * An item of `export default [ … ]`: the names that its chain calls, its text, the name that the first call takes first (`when(Event, …)`
+ * takes Event), and the class of each `new X(…)` in it.
+ * @typedef {{ chain: string[]; source: string; subject: string | null; constructed: (string | null)[] }} Item
+ */
+/** @typedef {{ name: string; from: string }} Imported a name that the file imports, and the module it comes from */
 /** @typedef {{ name: string | null; args: (string | null)[] }} Call */
 /**
  * What the rules read in a file: see factsOf.
  * @typedef {{
- *   imports: string[]; exports: Export[]; defaultArray: Item[] | null; classes: Class[]; constructed: (string | null)[]; calls: Call[];
- *   objectTypes: string[]; strings: string[]; tags: string[]
+ *   imports: string[]; imported: Imported[]; exports: Export[]; defaultArray: Item[] | null; classes: Class[]; constructed: (string | null)[];
+ *   calls: Call[]; objectTypes: string[]; strings: string[]; tags: string[]
  * }} Facts
  */
 
@@ -55,6 +60,16 @@ function chainOf(node) {
 }
 
 /**
+ * The name that the first call of a chain takes first: `when(Event, …)` and `bind(Port).to(Adapter)` take Event and Port.
+ * @param {Node} node
+ * @returns {string | null}
+ */
+function subjectOf(node) {
+  while (node?.type === "CallExpression" && node.callee.type === "MemberExpression") node = node.callee.object;
+  return node?.type === "CallExpression" && node.arguments[0]?.type === "Identifier" ? node.arguments[0].name : null;
+}
+
+/**
  * @param {Node} node
  * @returns {Export[]}
  */
@@ -83,8 +98,10 @@ const classOf = (node, exported) => ({
 
 /**
  * - imports: every module the file imports or re-exports, dynamic imports included;
+ * - imported: each name that the file imports, with its module;
  * - exports: each exported name, with its kind (class, interface, type, const, function, enum, specifier, default, all);
- * - defaultArray: the items of `export default [ … ]`, with the calls of each item (`bind(X).to(Y)` calls bind, to), or null;
+ * - defaultArray: the items of `export default [ … ]`, with the calls of each item (`bind(X).to(Y)` calls bind, to), the name that the first
+ *   call takes first (X), and the classes that the item builds, or null;
  * - classes: the classes, with what they extend and implement, and their properties;
  * - constructed: the class of each `new X(…)`;
  * - calls: each call, with the value of its arguments that are strings (null for the others);
@@ -97,15 +114,20 @@ const classOf = (node, exported) => ({
  */
 export function factsOf(program, text) {
   /** @type {Facts} */
-  const facts = { imports: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [] };
+  const facts = { imports: [], imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [] };
   const exportedClasses = new WeakSet();
   const seen = new WeakSet();
+  /** @type {{ node: Node; item: Item }[]} */
+  const items = [];
 
   /** @param {Node} node */
   const visit = node => {
     if (WITH_SOURCE.has(node.type)) {
       const source = stringOf(node.source);
       if (source !== null) facts.imports.push(source);
+      if (source !== null && node.type === "ImportDeclaration") {
+        for (const specifier of node.specifiers) facts.imported.push({ name: specifier.local.name, from: source });
+      }
     }
     if (node.type === "TSImportType") {
       const source = stringOf(node.source ?? node.argument);
@@ -119,11 +141,19 @@ export function factsOf(program, text) {
       facts.exports.push(...exportsOf(node));
       if (node.declaration?.type === "ClassDeclaration") exportedClasses.add(node.declaration);
       if (node.type === "ExportDefaultDeclaration" && node.declaration.type === "ArrayExpression") {
-        facts.defaultArray = node.declaration.elements.map((/** @type {Node} */ item) => ({ chain: chainOf(item), source: item ? text.slice(item.start, item.end).replace(/\s+/g, " ") : "" }));
+        facts.defaultArray = node.declaration.elements.map((/** @type {Node} */ element) => {
+          /** @type {Item} */
+          const item = { chain: chainOf(element), source: element ? text.slice(element.start, element.end).replace(/\s+/g, " ") : "", subject: subjectOf(element), constructed: [] };
+          if (element) items.push({ node: element, item });
+          return item;
+        });
       }
     }
     if (node.type === "ClassDeclaration") facts.classes.push(classOf(node, exportedClasses.has(node)));
-    if (node.type === "NewExpression") facts.constructed.push(nameOf(node.callee));
+    if (node.type === "NewExpression") {
+      facts.constructed.push(nameOf(node.callee));
+      for (const { node: element, item } of items) if (element.start <= node.start && node.end <= element.end) item.constructed.push(nameOf(node.callee));
+    }
     if (node.type === "CallExpression") facts.calls.push({ name: nameOf(node.callee), args: node.arguments.map(stringOf) });
     if (node.type === "ObjectExpression") {
       for (const property of node.properties) {
