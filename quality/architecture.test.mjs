@@ -329,6 +329,7 @@ const cases = [
   },
   { rule: "imports-by-shortcut", breaks: "a handler imports by going up folders", files: { [handler]: 'import "../../domain/entity/Note.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
   { rule: "contexts-isolated", breaks: "a context imports another context", files: { [handler]: 'import "#backend/alerts/domain/event/AlertRaised.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
+  { rule: "tests-in-one-context", breaks: "the test of a use case imports another context", files: { "src/backend/notes/command/add-note/add-note.application.test.ts": 'import { RaiseCommand } from "#backend/alerts/command/raise/raise.dto.js";\n\ntest(() => new RaiseCommand());\n' } },
   { rule: "sides-apart", breaks: "the frontend imports the backend", files: { [store]: 'import { AddNoteCommand } from "#backend/notes/command/add-note/add-note.dto.js";\n\nexport default { send: () => new AddNoteCommand() };\n' } },
   { rule: "layer-direction", breaks: "the domain imports the application", files: { [entity]: 'import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";\n\nexport class Note { command?: AddNoteCommand; }\n' } },
   { rule: "contexts-without-routes", breaks: "a handler imports a route", files: { [handler]: 'import "/src/routes/_backend/api/notes/+handler.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
@@ -352,7 +353,9 @@ const cases = [
     rule: "nothing-outside-src", breaks: "a handler imports a file of test/",
     files: { [handler]: 'import "../../../../../../test/support/notes.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' },
     expected: [["imports-by-shortcut", handler], ["nothing-outside-src", handler]]
-  }
+  },
+
+  { rule: "exceptions-in-quality", breaks: "a comment turns off a rule of ESLint", files: { [handler]: "// eslint-disable-next-line @typescript-eslint/no-explicit-any\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n" } }
 ];
 
 describe("the architecture rules", () => {
@@ -366,6 +369,81 @@ describe("the architecture rules", () => {
 
   test("each rule has a case that breaks it", () => {
     expect(cases.map(({ rule }) => rule)).toEqual(rules.map(({ name }) => name));
+  });
+});
+
+describe("the exceptions", () => {
+  const applicationTest = "src/backend/notes/command/add-note/add-note.application.test.ts";
+  const view = "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko";
+  const withComment = (/** @type {string} */ comment) => `${comment}\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n`;
+
+  test.for([
+    ["a rule of ESLint, for a line", "// eslint-disable-next-line no-console"],
+    ["the rules of ESLint, for a file", "/* eslint-disable */"],
+    ["a rule of ESLint, set in the file", "/* eslint no-console: off */"],
+    ["an error of TypeScript", "// @ts-expect-error: the text is a number"],
+    ["the types of a file", "// @ts-nocheck"],
+    ["a line of the coverage", "/* v8 ignore next */"],
+    ["a branch of the coverage, for istanbul", "/* istanbul ignore else */"],
+    ["the mutants of a line", "// Stryker disable next-line all"]
+  ])("a comment that turns off %s breaks exceptions-in-quality", ([, comment]) => {
+    expect(violationsWith({ [handler]: withComment(comment) })).toEqual([["exceptions-in-quality", handler]]);
+  });
+
+  test("a comment that only names a tool is a comment", () => {
+    expect(violationsWith({ [handler]: withComment("// eslint reads this file, and v8 runs it: Stryker mutates it") })).toEqual([]);
+  });
+
+  test("a test turns off no check either", () => {
+    expect(violationsWith({ [applicationTest]: "/* v8 ignore start */\ntest(() => {});\n" })).toEqual([["exceptions-in-quality", applicationTest]]);
+  });
+
+  test("a template turns off no check: its script, and its own comments", () => {
+    expect(violationsWith({ [view]: "<script>\n  // @ts-ignore\n  document.title = 1;\n</script>\n" })).toEqual([["exceptions-in-quality", view]]);
+    expect(violationsWith({ [view]: "// @ts-nocheck\n<p>Notes</p>\n" })).toEqual([["exceptions-in-quality", view]]);
+  });
+
+  test.for([
+    ["a skipped test", "test.skip(\"adds a note\", () => {});"],
+    ["a test that runs alone", "describe.only(\"notes\", () => {});"],
+    ["a test skipped on a condition", "test.skipIf(process.env.CI)(\"adds a note\", () => {});"],
+    ["a test that may fail", "it.fails(\"adds a note\", () => {});"]
+  ])("%s breaks exceptions-in-quality", ([, code]) => {
+    expect(violationsWith({ [applicationTest]: `${code}\n` })).toEqual([["exceptions-in-quality", applicationTest]]);
+  });
+
+  test("a call named skip, out of the functions of the tests, is a call", () => {
+    expect(violationsWith({ [applicationTest]: "test(() => { rows.skip(1); });\n" })).toEqual([]);
+  });
+});
+
+describe("the tests", () => {
+  const applicationTest = "src/backend/notes/command/add-note/add-note.application.test.ts";
+  const viewTest = "src/frontend/notes/presentation/view/notes-block/NotesBlock.test.ts";
+  const integrationTest = "src/backend/backend.integration.test.ts";
+
+  test("a test of a context reads its context and the context shared of its side", () => {
+    expect(violationsWith({ [applicationTest]: 'import { Note } from "#context/domain/entity/Note.js";\nimport { NotePosted } from "#shared/domain/event/NotePosted.js";\n\ntest(() => [Note, NotePosted]);\n' })).toEqual([]);
+  });
+
+  test("a test of a context that reads the context shared of the other side breaks tests-in-one-context", () => {
+    expect(violationsWith({ [applicationTest]: 'import { LabelChosen } from "#frontend-shared/event/LabelChosen.js";\n\ntest(() => new LabelChosen());\n' })).toEqual([["tests-in-one-context", applicationTest]]);
+  });
+
+  test("a test of a view that builds the frontend of another context breaks tests-in-one-context", () => {
+    expect(violationsWith({ [viewTest]: 'test(() => testPresentation("alerts"));\n' })).toEqual([["tests-in-one-context", viewTest]]);
+    expect(violationsWith({ [viewTest]: 'test(() => testPresentation("notes"));\n' })).toEqual([]);
+  });
+
+  test("an integration test reads one context at most: two contexts break tests-in-one-context", () => {
+    expect(violationsWith({ [integrationTest]: 'import { AddNoteCommand } from "./notes/command/add-note/add-note.dto.js";\nimport { NotePosted } from "#shared/domain/event/NotePosted.js";\n\ntest(() => [AddNoteCommand, NotePosted]);\n' })).toEqual([]);
+    expect(violationsWith({ [integrationTest]: 'import { AddNoteCommand } from "./notes/command/add-note/add-note.dto.js";\nimport { RaiseCommand } from "./alerts/command/raise/raise.dto.js";\n\ntest(() => [AddNoteCommand, RaiseCommand]);\n' })).toEqual([["tests-in-one-context", integrationTest]]);
+  });
+
+  test("a test out of src/ reads one context at most, and the context shared of its side", () => {
+    const endToEnd = "test/e2e/notes.spec.ts";
+    expect(violationsWith({ [endToEnd]: 'import { Label } from "#frontend/notes/domain/value-object/Label.js";\n\ntest(() => Label);\n' })).toEqual([]);
+    expect(violationsWith({ [endToEnd]: 'import { Label } from "#frontend/notes/domain/value-object/Label.js";\nimport { NotePosted } from "#shared/domain/event/NotePosted.js";\n\ntest(() => [Label, NotePosted]);\n' })).toEqual([["tests-in-one-context", endToEnd]]);
   });
 });
 
@@ -428,7 +506,7 @@ describe("the rules on the stylesheets", () => {
   test("tells a stylesheet that goes up a folder to load the files of its folder: Sass has no shortcut", () => {
     const sources = Object.entries({ ...project, [viewStylesheet]: `@use "${theme}";\n` }).map(([path, text]) => ({ path, text }));
     const [violation] = checkArchitecture(ROOT, sources, rules).violations;
-    expect(violation.message).toBe(`a stylesheet does not go up a folder: it loads the files of its folder, and a View reads the values of the theme as CSS variables (${theme})`);
+    expect(violation.message).toBe(`a stylesheet does not go up a folder: it loads the files of its folder, and a view reads the values of the theme as CSS variables (${theme})`);
   });
 
   test("a View that loads the values of the routes, by the load path of Sass, breaks contexts-without-routes", () => {

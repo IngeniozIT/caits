@@ -49,9 +49,10 @@ describe("the reading of a stylesheet", () => {
       .toEqual(["./theme", "../component/logo", "/theme", "#frontend/x"]);
   });
 
-  test("gives no other fact: a stylesheet has no code", () => {
-    expect(readScss(STYLESHEET, ".a { color: red; }\n", new Set())).toEqual({
-      imports: [], imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: []
+  test("gives no other fact but its comments: a stylesheet has no code", () => {
+    expect(readScss(STYLESHEET, "/* the links */\n.a { color: red; } // red\n", new Set())).toEqual({
+      imports: [], imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [],
+      comments: [" the links ", " red"]
     });
   });
 });

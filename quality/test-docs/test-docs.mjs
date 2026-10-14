@@ -34,7 +34,6 @@ const LAYERS = ["presentation", "command", "query", "event", "domain", "infra"];
 export const fromProjectRoot = file => relative(projectRoot, file).split(sep).join("/");
 
 /** Removes the terminal colors from an error message. @type {(text: string) => string} */
-// eslint-disable-next-line no-control-regex -- a color of the terminal starts with the character ESC.
 export const withoutColors = text => text.replace(/\u001b\[[0-9;]*m/g, "");
 
 /**

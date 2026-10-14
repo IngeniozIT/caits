@@ -1,4 +1,4 @@
-import { adapterOf, frontendsOf, givesSharedTags, importedModules, isCore, isMarko, isNode, isPackage, kebab, kernelPathOf, linesOf, locate, portOf, typeOfEvent } from "@ingenioz-it/caits/quality/architecture";
+import { adapterOf, frontendsOf, givesSharedTags, importedModules, isCore, isMarko, isNode, isPackage, isTestCode, kebab, kernelPathOf, linesOf, locate, portOf, resolveImport, typeOfEvent } from "@ingenioz-it/caits/quality/architecture";
 
 /** @import { Rule } from "@ingenioz-it/caits/quality/architecture" */
 
@@ -334,12 +334,12 @@ export const rules = [
 
   {
     name: "sides-hold-contexts",
-    description: "src/backend and src/frontend hold only the contexts: each context has its context map. src/backend holds the integration tests of the whole backend too (*.integration.test.ts).",
+    description: "src/backend and src/frontend hold only the contexts: a context map goes in its context. src/backend holds the integration tests of the whole backend too (*.integration.test.ts).",
     on: "file",
     check: ({ path }) => {
       const [, side, inside] = /^src\/(backend|frontend)\/([^/]+)$/.exec(path) ?? [];
       return side && (side === "frontend" || !/^[\w.-]+\.integration\.test\.ts$/.test(inside))
-        && `src/${side} holds only the contexts${side === "backend" ? ", and the integration tests of the whole backend (*.integration.test.ts)" : ""}: each context has its context map`;
+        && `src/${side} holds only the contexts${side === "backend" ? ", and the integration tests of the whole backend (*.integration.test.ts)" : ""}: a context map goes in its context`;
     }
   },
   {
@@ -507,12 +507,12 @@ export const rules = [
   },
   {
     name: "imports-by-shortcut",
-    description: "In src, an import does not go up a folder (../). A context imports its own files with #context/, and the context shared of its side with #shared/ in the backend, #frontend-shared/ in the frontend; a route imports the contexts with #backend/ and #frontend/. Thus an import does not change when its file moves. A stylesheet loads only the files of its folder: Sass reads # as the start of a fragment, and a View reads the values of the theme as CSS variables.",
+    description: "In src, an import does not go up a folder (../). A context imports its own files with #context/, and the context shared of its side with #shared/ in the backend, #frontend-shared/ in the frontend; a route imports the contexts with #backend/ and #frontend/. Thus an import does not change when its file moves. A stylesheet loads only the files of its folder: Sass reads # as the start of a fragment, and a view reads the values of the theme as CSS variables.",
     on: "file",
     check: ({ path, imports }) => path.startsWith("src/")
       && imports.filter(specifier => specifier.split("/").includes(".."))
         .map(specifier => path.endsWith(".scss")
-          ? `a stylesheet does not go up a folder: it loads the files of its folder, and a View reads the values of the theme as CSS variables (${specifier})`
+          ? `a stylesheet does not go up a folder: it loads the files of its folder, and a view reads the values of the theme as CSS variables (${specifier})`
           : `an import does not go up a folder: use #context/ in a context, #shared/ or #frontend-shared/ for shared, #backend/ or #frontend/ in a route (${specifier})`)
   },
   {
@@ -523,6 +523,29 @@ export const rules = [
       && (from.side === "backend"
         ? "a context never imports another context: its context map shares an event of its own as an event of shared, and the context map of each context that hears it turns it into inputs of its own"
         : "a context never imports another context: in the frontend, its context map shares an event of its own as an event of shared, and the context map of each context that hears it turns it into its own events")
+  },
+  {
+    name: "tests-in-one-context",
+    description: "A test reads one context, and the context shared of its side: a test in a context reads only its context, and a test out of the contexts (src/backend/*.integration.test.ts, test/) one context at most. No test crosses contexts: each context is tested alone, and its context map on its own lines, what it shares and what it does with an event of shared. A test of the frontend builds only the frontend of its context, with testPresentation.",
+    on: "file",
+    check: (file, { root }) => {
+      if (!isTestCode(file.path)) return;
+      const [source, side, context, ...rest] = file.path.split("/");
+      const own = source === "src" && (side === "backend" || side === "frontend") && rest.length > 0 ? `${side}/${context}` : undefined;
+      const read = new Set([
+        ...file.imports.map(specifier => resolveImport(file.path, specifier, root))
+          .flatMap(({ internal, target }) => internal && /^src\/(backend|frontend)\/[^/]+\/./.test(target) ? [target.split("/").slice(1, 3).join("/")] : []),
+        ...file.calls.flatMap(({ name, args: [built] }) => name === "testPresentation" && typeof built === "string" ? [`frontend/${built}`] : [])
+      ]);
+      if (own) {
+        const others = [...read].filter(name => name !== own && name !== `${side}/shared`);
+        return others.length > 0
+          && `a test of ${own} reads only its context and shared, not ${others.join(", ")}: each context is tested alone, and its context map on what it shares and what it does with an event of shared`;
+      }
+      const sides = new Set([...read].map(name => name.split("/")[0]));
+      return ([...read].filter(name => !name.endsWith("/shared")).length > 1 || sides.size > 1)
+        && `a test reads one context at most, and the context shared of its side: this one reads ${[...read].join(", ")}. Each context is tested alone`;
+    }
   },
   {
     name: "sides-apart",
@@ -618,5 +641,27 @@ export const rules = [
     on: "import",
     check: ({ from, specifier, target }) => specifier.startsWith(".") && from.kind !== "other" && !target.startsWith("src/")
       && "production code (src) never imports a file outside src, tests included; it imports the kernel by its name (@ingenioz-it/caits/…)"
+  },
+
+  // Exceptions: they live in quality/, never in the code
+
+  {
+    name: "exceptions-in-quality",
+    description: "The code turns off no check: no comment that turns off a rule of ESLint (eslint-disable…), an error of TypeScript (@ts-ignore, @ts-expect-error, @ts-nocheck), lines of the coverage (v8 ignore, c8 ignore, istanbul ignore) or mutants (Stryker disable), and no test that does not run, runs alone or may fail (skip, skipIf, runIf, only, fails, fail, fixme). An exception lives in quality/, as narrow as it can be: a rule of ESLint turned off for one file in quality/eslint.config.js, a file out of the coverage in quality/vite.config.ts, a file out of the mutants in quality/stryker.config.mjs, a rule of quality/architecture.mjs that leaves one file aside.",
+    on: "file",
+    /** The comments that turn off a check: ESLint, TypeScript, the coverage (V8, c8, istanbul) and Stryker. */
+    comments: /^[\s*]*(?:eslint-(?:disable|enable)|eslint-env\s|eslint\s+[@\w/-]+\s*:|@ts-(?:ignore|expect-error|nocheck)\b|(?:v8|c8|istanbul|node:coverage)\s+(?:ignore|disable)\b|[Ss]tryker\s+(?:disable|restore)\b)/,
+    /** The functions of Vitest and Playwright that keep a test from running, or from failing. */
+    skips: new Set(["skip", "skipIf", "runIf", "only", "fails", "fail", "fixme"]),
+    testFunctions: new Set(["test", "it", "describe", "suite"]),
+    /** @this {{ comments: RegExp; skips: Set<string>; testFunctions: Set<string> }} */
+    check(file) {
+      return [
+        ...file.comments.filter(comment => this.comments.test(comment))
+          .map(comment => `a comment turns off a check (${comment.trim()}): fix the code, or write the exception in quality/, for this file only`),
+        ...file.calls.filter(({ name, root }) => name !== null && root !== null && name !== root && this.skips.has(name) && this.testFunctions.has(root))
+          .map(({ name, root }) => `${root}.${name} keeps tests from running, or from failing: every test runs, every time, and passes`)
+      ];
+    }
   }
 ];

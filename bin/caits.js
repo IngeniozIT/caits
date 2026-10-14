@@ -24,8 +24,8 @@ const USAGE = `Usage: caits <command>
   architecture         Checks the rules of quality/architecture.mjs.
   e2e                  Runs the end-to-end tests on the production build.
   mutation             Runs the mutation tests (Stryker), then gives the score of each file and the mutants that survived. Its exit
-                       code is that of Stryker.
-  mutation-summary     Gives the mutation score of each file (--survivors: the mutants that survived).
+                       code is that of Stryker, or 1 when a mutant was not tested (its unit tests did not run).
+  mutation-summary     Gives the mutation score of each file (--survivors: the mutants that survived, and those not tested).
   mutation-suite       The unit tests, as Stryker runs them for each mutant.
 
   --help, -h           Shows this help, also after a command (caits init --help).

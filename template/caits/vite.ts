@@ -15,8 +15,10 @@ export default defineConfig({
   // `caits check` runs the checks at once: it gives each one a build folder of its own (CAITS_OUT_DIR), else they empty the folder of
   // each other. Without it, the build goes in dist/, which `npm start` runs.
   build: { outDir: process.env.CAITS_OUT_DIR || "dist" },
-  // The checks write their reports while the development server runs: a report is not a file of the app, and reloads no page.
-  server: { watch: { ignored: ["**/reports/**"] } },
+  // The checks write their reports while the development server runs: a report is not a file of the app, and reloads no page. The
+  // sandbox of the mutation tests (.stryker-tmp/) copies the project, its tsconfig.json too: the server would empty its cache at each
+  // copy, and lose the dependencies that it optimized.
+  server: { watch: { ignored: ["**/reports/**", "**/.stryker-tmp/**"] } },
   css: { preprocessorOptions: { scss: { loadPaths: [STYLE_FOLDER] } } },
   test: {
     include: ["src/**/*.test.ts", "test/**/*.test.ts", "quality/**/*.test.mjs"],

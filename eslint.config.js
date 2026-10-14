@@ -6,6 +6,8 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
+    // The code turns off no rule: an exception lives here, for the files that need it.
+    linterOptions: { noInlineConfig: true },
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: {
       "@typescript-eslint/no-floating-promises": "error",
@@ -25,6 +27,16 @@ export default tseslint.config(
     // The walk of the architecture check reads the nodes of two trees, of oxc and of Babel, which have no type (see Node in facts.mjs).
     files: ["quality/architecture/facts.mjs"],
     rules: { "@typescript-eslint/no-unsafe-member-access": "off", "@typescript-eslint/no-unsafe-assignment": "off", "@typescript-eslint/no-unsafe-argument": "off", "@typescript-eslint/no-unsafe-call": "off", "@typescript-eslint/no-unsafe-return": "off" }
+  },
+  {
+    // The page of the tests removes the colors of the terminal from the names of the tests: a color starts with the character ESC.
+    files: ["quality/test-docs/test-docs.mjs"],
+    rules: { "no-control-regex": "off" }
+  },
+  {
+    // Frontends starts empty: each context adds its frontend to it, by declaration merging.
+    files: ["src/di/frontend.ts"],
+    rules: { "@typescript-eslint/no-empty-object-type": "off" }
   },
   {
     // The kernel imports the virtual modules of its Vite plugin: the files that do name the types of these modules with a reference,

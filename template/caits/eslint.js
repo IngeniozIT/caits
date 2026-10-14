@@ -15,6 +15,9 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
+    // The code turns off no rule: a comment such as eslint-disable has no effect. An exception lives in quality/eslint.config.js, for the
+    // files that need it (the architecture rule exceptions-in-quality refuses the comment itself).
+    linterOptions: { noInlineConfig: true },
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: root } },
     rules: {
       "@typescript-eslint/no-floating-promises": "error",

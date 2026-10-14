@@ -24,6 +24,13 @@ describe("readMarko", () => {
     expect(readMarko(file, "<badge/>\n<p>Notes</p>\n", root).imports).toEqual(["/src/frontend/shared/presentation/component/badge/index.marko"]);
   });
 
+  test("gives the comments of a template: those of its code, and its own", () => {
+    const file = join(root, "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko");
+
+    expect(readMarko(file, "// a view\nstatic const max = 3; // at most\n<p>${/* the max */ max}</p>\n<!-- the end -->\n", root).comments.sort())
+      .toEqual([" a view", " at most", " the end ", " the max "].sort());
+  });
+
   test("a tag of the template itself, or one that Marko does not know, counts as no import", () => {
     const file = join(root, "src/frontend/shared/presentation/component/badge/index.marko");
 

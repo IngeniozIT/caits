@@ -7,7 +7,7 @@ import { factsOf } from "../facts.mjs";
  * @param {string} text
  */
 export function readTypeScript(path, text) {
-  const { program, errors } = parseSync(path, text);
+  const { program, errors, comments } = parseSync(path, text);
   if (errors.length > 0) throw new Error(`${path}: ${errors[0].message}`);
-  return factsOf(program, text);
+  return factsOf(program, text, comments.map(comment => comment.value));
 }

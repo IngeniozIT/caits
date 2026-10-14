@@ -16,12 +16,12 @@
  * @typedef {{ chain: string[]; source: string; subject: string | null; constructed: (string | null)[] }} Item
  */
 /** @typedef {{ name: string; from: string }} Imported a name that the file imports, and the module it comes from */
-/** @typedef {{ name: string | null; args: (string | null)[] }} Call */
+/** A call: the name that it calls, the name that its chain starts from (`test` for `test.skip(…)`), and its arguments that are strings. @typedef {{ name: string | null; root: string | null; args: (string | null)[] }} Call */
 /**
  * What the rules read in a file: see factsOf.
  * @typedef {{
  *   imports: string[]; imported: Imported[]; exports: Export[]; defaultArray: Item[] | null; classes: Class[]; constructed: (string | null)[];
- *   calls: Call[]; objectTypes: string[]; strings: string[]; tags: string[]
+ *   calls: Call[]; objectTypes: string[]; strings: string[]; tags: string[]; comments: string[]
  * }} Facts
  */
 
@@ -39,6 +39,11 @@ const stringOf = node => {
 };
 /** @type {(node: Node) => string | null} */
 const nameOf = node => node?.type === "Identifier" ? node.name : node?.type === "MemberExpression" && !node.computed ? node.property.name : null;
+/** The name that a callee starts from: `test` for `test.skip`, `test.skipIf(x)` and `test.describe.only`. @type {(node: Node) => string | null} */
+const rootOf = node => {
+  while (node?.type === "MemberExpression" || node?.type === "CallExpression") node = node.type === "MemberExpression" ? node.object : node.callee;
+  return node?.type === "Identifier" ? node.name : null;
+};
 /** @type {(node: Node) => string | null} */
 const keyOf = node => node.key?.name ?? stringOf(node.key);
 
@@ -107,14 +112,17 @@ const classOf = (node, exported) => ({
  * - calls: each call, with the value of its arguments that are strings (null for the others);
  * - objectTypes: the value of each `type: "…"` of an object literal;
  * - strings: every string of the code (comments and import paths aside);
- * - tags: the name of each Marko tag (Marko only).
+ * - tags: the name of each Marko tag (Marko only);
+ * - comments: the text of each comment: those that the parser gives, those that the tree holds, and the comments of a Marko template.
  * @param {Node} program
  * @param {string} text
+ * @param {string[]} [comments] the comments that the parser gives apart from the tree (oxc)
  * @returns {Facts}
  */
-export function factsOf(program, text) {
+export function factsOf(program, text, comments = []) {
   /** @type {Facts} */
-  const facts = { imports: [], imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [] };
+  const facts = { imports: [], imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [], comments: [...comments] };
+  const seenComments = new WeakSet();
   const exportedClasses = new WeakSet();
   const seen = new WeakSet();
   /** @type {{ node: Node; item: Item }[]} */
@@ -154,7 +162,7 @@ export function factsOf(program, text) {
       facts.constructed.push(nameOf(node.callee));
       for (const { node: element, item } of items) if (element.start <= node.start && node.end <= element.end) item.constructed.push(nameOf(node.callee));
     }
-    if (node.type === "CallExpression") facts.calls.push({ name: nameOf(node.callee), args: node.arguments.map(stringOf) });
+    if (node.type === "CallExpression") facts.calls.push({ name: nameOf(node.callee), root: rootOf(node.callee), args: node.arguments.map(stringOf) });
     if (node.type === "ObjectExpression") {
       for (const property of node.properties) {
         const type = stringOf(property.value);
@@ -167,6 +175,11 @@ export function factsOf(program, text) {
     if (node.type === "TemplateElement") facts.strings.push(node.value.cooked);
     const tag = node.type === "MarkoTag" ? stringOf(node.name) : null;
     if (tag !== null) facts.tags.push(tag);
+    // Babel hangs the comments on the nodes next to them, a comment on two nodes at times; a comment of a Marko template is a node.
+    for (const comment of [node.leadingComments, node.innerComments, node.trailingComments].flat()) {
+      if (comment && !seenComments.has(comment)) { seenComments.add(comment); facts.comments.push(comment.value); }
+    }
+    if (node.type === "MarkoComment") facts.comments.push(node.value);
   };
 
   /** @type {(node: Node, parentType?: string, key?: string) => void} */

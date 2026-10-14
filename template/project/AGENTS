@@ -24,7 +24,9 @@ A CAITS project (Clean Architecture In TypeScript): a Marko app with a backend a
 ## Rules
 
 - Write the test first. The coverage and the mutation score stay at 100%.
+- A test reads only its own context and shared: no test crosses contexts.
 - A check that fails names the file and the rule: fix the code, not the rule.
+- No comment turns off a check (`eslint-disable`, `@ts-ignore`, `v8 ignore`, `Stryker disable`), and no test is skipped. An exception lives in `quality/`, as narrow as it can be.
 - Do not change `quality/` (the rules, the thresholds, the configuration of the tools) without asking.
 
 Documentation: https://caits.dev/docs

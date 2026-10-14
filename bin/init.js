@@ -209,12 +209,20 @@ function cloneExample(source) {
  */
 export function update(root) {
   const folder = join(root, DEFAULTS_FOLDER);
-  rmSync(folder, { recursive: true, force: true });
+  const defaults = new Map(filesOf(DEFAULTS).map(file => [file, headerOf(VERSION) + readFileSync(join(DEFAULTS, file), "utf8")]));
   mkdirSync(folder, { recursive: true });
-  return filesOf(DEFAULTS).map(file => {
-    writeFileSync(join(folder, file), headerOf(VERSION) + readFileSync(join(DEFAULTS, file), "utf8"));
-    return `${DEFAULTS_FOLDER}/${file}`;
-  });
+  for (const entry of readdirSync(folder, { recursive: true, withFileTypes: true })) {
+    const file = relative(folder, join(entry.parentPath, entry.name)).split(sep).join("/");
+    if (!entry.isDirectory() && !(entry.isFile() && defaults.has(file))) rmSync(join(folder, file), { force: true });
+  }
+  // Only the files that change are written: a development server that watches the others (vite.ts, tsconfig.json) does not restart.
+  for (const [file, text] of defaults) {
+    const path = join(folder, file);
+    if (existsSync(path) && readFileSync(path, "utf8") === text) continue;
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, text);
+  }
+  return [...defaults.keys()].map(file => `${DEFAULTS_FOLDER}/${file}`);
 }
 
 /**

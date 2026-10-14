@@ -19,7 +19,12 @@ export const STYLE_FOLDER = "src/routes/_frontend/style";
  * @param {Set<string>} paths the paths of all the files of the project
  */
 export function readScss(path, text, paths) {
-  const code = text.replace(STRING_OR_COMMENT, (/** @type {string} */ _match, /** @type {string | undefined} */ string) => string ?? "");
+  /** @type {string[]} */
+  const comments = [];
+  const code = text.replace(STRING_OR_COMMENT, (/** @type {string} */ match, /** @type {string | undefined} */ string) => {
+    if (string === undefined) comments.push(match.startsWith("//") ? match.slice(2) : match.slice(2, -2));
+    return string ?? "";
+  });
   const specifiers = [...code.matchAll(USE_OR_FORWARD)].map(match => match[2]);
   for (const [, list] of code.matchAll(IMPORT)) {
     for (const item of list.split(",")) {
@@ -31,7 +36,7 @@ export function readScss(path, text, paths) {
     if (isIn(dirname(path), specifier, paths)) return `./${specifier}`;
     return isIn(STYLE_FOLDER, specifier, paths) ? `/${posix.join(STYLE_FOLDER, specifier)}` : specifier;
   });
-  return { imports, imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [] };
+  return { imports, imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [], comments };
 }
 
 /**

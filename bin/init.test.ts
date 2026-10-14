@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -222,6 +222,33 @@ describe("update", () => {
 
     expect(read(root, "quality/caits/eslint.js")).toMatch(new RegExp(`^// CAITS ${VERSION} wrote this file\\. Do not change it`));
     expect(existsSync(join(root, "quality/caits/old.js"))).toBe(false);
+  });
+
+  test("leaves quality/caits/ as it is when it holds the defaults already: a development server that watches it does not restart", () => {
+    const root = newFolder();
+    update(root);
+    const before = new Date("2020-01-01T00:00:00Z");
+    for (const file of DEFAULTS) utimesSync(join(root, file), before, before);
+
+    expect(update(root)).toEqual(DEFAULTS);
+
+    for (const file of DEFAULTS) expect(statSync(join(root, file)).mtime).toEqual(before);
+  });
+
+  test("writes only the defaults that change: a development server that watches the others does not restart", () => {
+    const root = newFolder();
+    update(root);
+    const before = new Date("2020-01-01T00:00:00Z");
+    for (const file of DEFAULTS) utimesSync(join(root, file), before, before);
+    const [changed, ...others] = DEFAULTS;
+    write(root, changed, "an older default\n");
+    utimesSync(join(root, changed), before, before);
+
+    update(root);
+
+    expect(statSync(join(root, changed)).mtime).not.toEqual(before);
+    expect(read(root, changed)).toMatch(new RegExp(`^// CAITS ${VERSION} wrote this file`));
+    for (const file of others) expect(statSync(join(root, file)).mtime).toEqual(before);
   });
 
   test("the versions of the defaults tell whether quality/caits/ comes from the installed CAITS", () => {

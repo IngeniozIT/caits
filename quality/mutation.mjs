@@ -1,5 +1,6 @@
 // `caits mutation`: the mutation tests (Stryker, with quality/stryker.config.mjs), then the score of each file and the mutants that
 // survived, whether Stryker passed or not. Stryker alone ends with its threshold when the score is too low: the survivors say what to fix.
+// The run fails also when a mutant is not tested, which Stryker counts as killed (`caits mutation-summary`).
 import { spawn } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { REPORT, run as summary } from "./mutation-summary.mjs";
@@ -9,7 +10,7 @@ export const STRYKER_CONFIG = "quality/stryker.config.mjs";
 
 /**
  * @param {string[]} args the options of Stryker
- * @returns {Promise<number>} the exit code of Stryker
+ * @returns {Promise<number>} the exit code of Stryker, or 1 when a mutant is not tested
  */
 export async function run(args) {
   if (!existsSync(STRYKER_CONFIG)) throw new Error(`${STRYKER_CONFIG} is missing: it gives the configuration of the mutation tests. Run \`npx caits init .\` to write it.`);
@@ -22,9 +23,7 @@ export async function run(args) {
     stryker.on("error", () => resolve(1));
     stryker.on("close", code => resolve(code ?? 1));
   });
-  if (existsSync(REPORT)) {
-    console.log("");
-    summary(["--survivors"]);
-  }
-  return status;
+  if (!existsSync(REPORT)) return status;
+  console.log("");
+  return summary(["--survivors"]) || status;
 }
