@@ -22,14 +22,14 @@ describe("discovering the backend", () => {
     const found = discover({
       ...nothing,
       dtos: {
-        [`${root}/notes/application/command/add/add.dto.ts`]: { AddCommand, AddOutput, MAX_LENGTH: 280 },
-        [`${root}/notes/application/query/list/list.dto.ts`]: { ListQuery }
+        [`${root}/notes/command/add/add.dto.ts`]: { AddCommand, AddOutput, MAX_LENGTH: 280 },
+        [`${root}/notes/query/list/list.dto.ts`]: { ListQuery }
       },
       handlers: {
-        [`${root}/notes/application/command/add/add.handler.ts`]: { AddHandler, retries: 2 },
-        [`${root}/notes/application/query/list/list.handler.ts`]: { ListHandler }
+        [`${root}/notes/command/add/add.handler.ts`]: { AddHandler, retries: 2 },
+        [`${root}/notes/query/list/list.handler.ts`]: { ListHandler }
       },
-      controllers: { [`${root}/notes/presentation/add-form/add-form.controller.ts`]: { AddForm, path: "/notes" } }
+      controllers: { [`${root}/notes/command/add/add.form.controller.ts`]: { AddForm, path: "/notes" } }
     });
     expect(found.contexts).toEqual({
       notes: { bindings: [], useCases: [{ input: AddCommand, handler: AddHandler }, { input: ListQuery, handler: ListHandler }], controllers: [AddForm], map: [] }
@@ -72,19 +72,19 @@ describe("discovering the backend", () => {
       .toThrow(`the backend context shared hears no other context: it has no context map (${root}/shared/context-map.ts)`);
   });
 
-  const dto = `${root}/notes/application/command/add/add.dto.ts`;
+  const dto = `${root}/notes/command/add/add.dto.ts`;
   test.for<{ scenario: string; dtos: Record<string, Record<string, unknown>> }>([
     { scenario: "has no DTO file", dtos: {} },
     { scenario: "has a DTO file with no input", dtos: { [dto]: { AddOutput } } },
     { scenario: "has a DTO file with two inputs", dtos: { [dto]: { AddCommand, ListQuery } } }
   ])("refuses a use case that $scenario", ({ dtos }) => {
-    const handlers = { [`${root}/notes/application/command/add/add.handler.ts`]: { AddHandler } };
-    expect(() => discover({ ...nothing, dtos, handlers })).toThrow(`${root}/notes/application/command/add/add.dto.ts declares one input DTO`);
+    const handlers = { [`${root}/notes/command/add/add.handler.ts`]: { AddHandler } };
+    expect(() => discover({ ...nothing, dtos, handlers })).toThrow(`${root}/notes/command/add/add.dto.ts declares one input DTO`);
   });
 
   test("refuses a handler file with two classes", () => {
-    const dtos = { [`${root}/notes/application/command/add/add.dto.ts`]: { AddCommand } };
-    const handlers = { [`${root}/notes/application/command/add/add.handler.ts`]: { AddHandler, ListHandler } };
+    const dtos = { [`${root}/notes/command/add/add.dto.ts`]: { AddCommand } };
+    const handlers = { [`${root}/notes/command/add/add.handler.ts`]: { AddHandler, ListHandler } };
     expect(() => discover({ ...nothing, dtos, handlers })).toThrow("add.handler.ts declares one handler (found 2)");
   });
 });

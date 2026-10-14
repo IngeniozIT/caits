@@ -1,7 +1,7 @@
 import type { StoreDefinition } from "@ingenioz-it/caits/state/createStore";
 import type { Loadable } from "@ingenioz-it/caits/state/Loadable";
-import type { GreetingsEvent } from "../../application/event/GreetingsEvent.js";
-import { ListGreetingsQuery } from "../../application/query/list-greetings/list-greetings.dto.js";
+import type { GreetingsEvent } from "../../event/GreetingsEvent.js";
+import { ListGreetingsQuery } from "../../query/list-greetings/list-greetings.dto.js";
 
 export type GreetingsState = { greetings: Loadable<string[]> };
 

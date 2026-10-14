@@ -1,5 +1,5 @@
 import type { EventPublisher } from "@ingenioz-it/caits/messaging/EventPublisher";
-import type { GreetingsGateway } from "../../../domain/port/greetings-gateway/GreetingsGateway.js";
+import type { GreetingsGateway } from "../../domain/port/greetings-gateway/GreetingsGateway.js";
 import { GreetingsLoaded } from "../../event/GreetingsLoaded.js";
 import type { GreetingsEvent } from "../../event/GreetingsEvent.js";
 

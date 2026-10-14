@@ -4,7 +4,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** A fresh backend module, with the controller class of the same fresh modules. */
 const fresh = async () => {
   vi.resetModules();
-  const { GreetHttpController } = await import("../../test/project/backend/greetings/presentation/greet-http/greet-http.controller.js");
+  const { GreetHttpController } = await import("../../test/project/backend/greetings/command/greet/greet.http.controller.js");
   return { ...await import("./backend.js"), GreetHttpController };
 };
 const greet = (name: string) => new Request(`http://localhost/api/greet?name=${name}`, { method: "POST" });

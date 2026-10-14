@@ -6,10 +6,11 @@ import { dirname, join, posix, relative, resolve } from "node:path";
 /** @import { Facts } from "./facts.mjs" */
 /** @typedef {"backend" | "frontend"} Side */
 /**
- * Where a file lives: see locate. Only a layer has a context and a layer, and only a layer and the routes have a side.
- * @typedef {{ kind: "other" | "test-environment"; side?: undefined; context?: undefined; layer?: undefined }
- *   | { kind: "routes"; side: Side; context?: undefined; layer?: undefined }
- *   | { kind: "layer"; side: Side; context: string; layer: string }} Location
+ * Where a file lives: see locate. Only a layer has a context and a layer, and only a layer and the routes have a side. A file of a use
+ * case has its use case too: command/add-note.
+ * @typedef {{ kind: "other" | "test-environment"; side?: undefined; context?: undefined; layer?: undefined; useCase?: undefined }
+ *   | { kind: "routes"; side: Side; context?: undefined; layer?: undefined; useCase?: undefined }
+ *   | { kind: "layer"; side: Side; context: string; layer: string; useCase?: string }} Location
  */
 /** A file of the project: its path from the root of the project, and what the rules read in it. @typedef {Facts & { path: string }} File */
 /** The project: its root, its files, and their paths. @typedef {{ root: string; files: File[]; paths: Set<string> }} Project */
@@ -40,7 +41,9 @@ export const kernelPathOf = specifier => specifier.startsWith(`${KERNEL.name}/`)
 
 /**
  * Where a file lives: a test environment (test.di.ts), the routes of one side, the context map, a layer of a context (its di.ts is a
- * layer too), or elsewhere.
+ * layer too), or elsewhere. The folders of a context say its layers: a use case, in command/ or query/, is of the application, but its
+ * controllers ({usecase}.{name}.controller.ts) and their tests ({usecase}.{name}.presentation.test.ts), which are of the presentation;
+ * the events of the frontend, in event/, are of the application.
  * @param {string} path
  * @returns {Location}
  */
@@ -50,12 +53,14 @@ export function locate(path) {
   if (parts[1] === "routes") return { kind: "routes", side: parts[2] === "_frontend" ? "frontend" : "backend" };
 
   if (/^test\.di\.(js|ts)$/.test(parts[parts.length - 1])) return { kind: "test-environment" };
-  if ((parts[1] === "backend" || parts[1] === "frontend") && parts.length === 4 && /^context-map(\.test)?\.(js|ts)$/.test(parts[3])) {
-    return { kind: "layer", context: parts[2], side: parts[1], layer: "map" };
+  if (parts[1] !== "backend" && parts[1] !== "frontend") return { kind: "other" };
+  const [, side, context, folder] = parts;
+  if (parts.length === 4) return { kind: "layer", context, side, layer: /^context-map(\.test)?\.(js|ts)$/.test(folder) ? "map" : "di" };
+  if ((folder === "command" || folder === "query") && parts.length === 6) {
+    const layer = /\.(controller|presentation\.test)\.(js|ts)$/.test(parts[5]) ? "presentation" : "application";
+    return { kind: "layer", context, side, layer, useCase: `${folder}/${parts[4]}` };
   }
-  if ((parts[1] === "backend" || parts[1] === "frontend") && parts.length === 4) return { kind: "layer", context: parts[2], side: parts[1], layer: "di" };
-  if (parts[1] === "backend" || parts[1] === "frontend") return { kind: "layer", context: parts[2], side: parts[1], layer: parts[3] };
-  return { kind: "other" };
+  return { kind: "layer", context, side, layer: ["command", "query", "event"].includes(folder) ? "application" : folder };
 }
 
 /** The domain and the application: the code that holds no technology. @type {(where: Location) => boolean} */

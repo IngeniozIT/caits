@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { GreetingsRequested } from "../../test/project/frontend/greetings/application/event/GreetingsRequested.js";
-import { GreetingsAsked } from "../../test/project/frontend/shared/application/event/GreetingsAsked.js";
-import { ThemeChosen } from "../../test/project/frontend/shared/application/event/ThemeChosen.js";
-import { WelcomeShown } from "../../test/project/frontend/welcome/application/event/WelcomeShown.js";
+import { GreetingsRequested } from "../../test/project/frontend/greetings/event/GreetingsRequested.js";
+import { GreetingsAsked } from "../../test/project/frontend/shared/event/GreetingsAsked.js";
+import { ThemeChosen } from "../../test/project/frontend/shared/event/ThemeChosen.js";
+import { WelcomeShown } from "../../test/project/frontend/welcome/event/WelcomeShown.js";
 import { settled } from "../state/Loadable.js";
 import { request } from "../state/request.js";
 import { discoveredFrontends } from "./discoveredFrontends.js";

@@ -23,12 +23,12 @@ describe("discovering the frontend", () => {
       ...nothing,
       ...notes,
       dtos: {
-        [`${root}/notes/application/command/add/add.dto.ts`]: { AddCommand, AddedNote, MAX_LENGTH: 280 },
-        [`${root}/notes/application/query/list/list.dto.ts`]: { ListQuery }
+        [`${root}/notes/command/add/add.dto.ts`]: { AddCommand, AddedNote, MAX_LENGTH: 280 },
+        [`${root}/notes/query/list/list.dto.ts`]: { ListQuery }
       },
       handlers: {
-        [`${root}/notes/application/command/add/add.handler.ts`]: { AddHandler, retries: 2 },
-        [`${root}/notes/application/query/list/list.handler.ts`]: { ListHandler }
+        [`${root}/notes/command/add/add.handler.ts`]: { AddHandler, retries: 2 },
+        [`${root}/notes/query/list/list.handler.ts`]: { ListHandler }
       }
     });
     expect(found).toEqual({ notes: { bindings, store: notesStore, map: [], useCases: [{ input: AddCommand, handler: AddHandler }, { input: ListQuery, handler: ListHandler }] } });
@@ -59,7 +59,7 @@ describe("discovering the frontend", () => {
   });
 
   test("a context with use cases and no store is refused: the store sends their input DTOs", () => {
-    const handler = `${root}/notes/application/query/list/list.handler.ts`;
+    const handler = `${root}/notes/query/list/list.handler.ts`;
     expect(() => discoverFrontends({ ...nothing, bindings: notes.bindings, dtos: { [handler.replace(".handler.ts", ".dto.ts")]: { ListQuery } }, handlers: { [handler]: { ListHandler } } }))
       .toThrow("the frontend notes has use cases, but no store to send their input DTOs: it declares one in presentation/store/");
   });
@@ -93,14 +93,14 @@ describe("discovering the frontend", () => {
   });
 
   test("a handler of a folder without a di.ts is refused", () => {
-    expect(() => discoverFrontends({ ...nothing, handlers: { [`${root}/ghost/application/query/list/list.handler.ts`]: { ListHandler } } }))
-      .toThrow(`${root}/ghost/application/query/list/list.handler.ts belongs to a frontend without a di.ts`);
+    expect(() => discoverFrontends({ ...nothing, handlers: { [`${root}/ghost/query/list/list.handler.ts`]: { ListHandler } } }))
+      .toThrow(`${root}/ghost/query/list/list.handler.ts belongs to a frontend without a di.ts`);
   });
 
   test("a handler needs the input DTO of its folder, and a single class", () => {
-    const handler = `${root}/notes/application/query/list/list.handler.ts`;
+    const handler = `${root}/notes/query/list/list.handler.ts`;
     expect(() => discoverFrontends({ ...nothing, ...notes, handlers: { [handler]: { ListHandler } } }))
-      .toThrow(`${root}/notes/application/query/list/list.dto.ts declares one input DTO (found 0)`);
+      .toThrow(`${root}/notes/query/list/list.dto.ts declares one input DTO (found 0)`);
     expect(() => discoverFrontends({ ...nothing, ...notes, dtos: { [handler.replace(".handler.ts", ".dto.ts")]: { ListQuery } }, handlers: { [handler]: { ListHandler, AddHandler } } }))
       .toThrow(`${handler} declares one handler (found 2)`);
   });

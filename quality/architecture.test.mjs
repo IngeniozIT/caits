@@ -69,8 +69,8 @@ export class InMemoryNoteRepository implements NoteRepository {
 
 describeNoteRepositoryContract();
 `,
-  "src/backend/notes/application/command/add-note/add-note.dto.ts": "export class AddNoteCommand {}\nexport class AddNoteOutput {}\n",
-  "src/backend/notes/application/command/add-note/add-note.handler.ts": `import type { NoteRepository } from "#context/domain/port/note-repository/NoteRepository.js";
+  "src/backend/notes/command/add-note/add-note.dto.ts": "export class AddNoteCommand {}\nexport class AddNoteOutput {}\n",
+  "src/backend/notes/command/add-note/add-note.handler.ts": `import type { NoteRepository } from "#context/domain/port/note-repository/NoteRepository.js";
 import { AddNoteOutput } from "./add-note.dto.js";
 
 export class AddNoteHandler {
@@ -79,8 +79,8 @@ export class AddNoteHandler {
   execute(): AddNoteOutput { return new AddNoteOutput(); }
 }
 `,
-  "src/backend/notes/presentation/add-note-http/add-note-http.controller.ts": `import { Controller } from "@ingenioz-it/caits/messaging/Controller";
-import { AddNoteCommand } from "#context/application/command/add-note/add-note.dto.js";
+  "src/backend/notes/command/add-note/add-note.http.controller.ts": `import { Controller } from "@ingenioz-it/caits/messaging/Controller";
+import { AddNoteCommand } from "./add-note.dto.js";
 
 export class AddNoteHttpController extends Controller {
   toDto(): AddNoteCommand { return new AddNoteCommand(); }
@@ -90,7 +90,7 @@ export class AddNoteHttpController extends Controller {
   "src/backend/shared/domain/event/UserJoined.ts": "export class UserJoined {}\n",
   "src/backend/shared/domain/event/NotePosted.ts": "export class NotePosted {}\n",
   "src/backend/notes/context-map.ts": `import { share, when } from "@ingenioz-it/caits/messaging/ContextMap";
-import { AddNoteCommand } from "#context/application/command/add-note/add-note.dto.js";
+import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";
 import { NoteAdded } from "#context/domain/event/NoteAdded.js";
 import { NotePosted } from "#shared/domain/event/NotePosted.js";
 import { UserJoined } from "#shared/domain/event/UserJoined.js";
@@ -121,28 +121,28 @@ export class HttpNotesGateway implements NotesGateway {
 
 describeNotesGatewayContract();
 `,
-  "src/frontend/notes/application/event/NotesRequested.ts": `export class NotesRequested {
+  "src/frontend/notes/event/NotesRequested.ts": `export class NotesRequested {
   readonly type = "notes.requested" as const;
 }
 `,
-  "src/frontend/notes/application/query/list-notes/list-notes.dto.ts": "export class ListNotesQuery {}\n",
-  "src/frontend/notes/application/query/list-notes/list-notes.handler.ts": `import type { NotesGateway } from "#context/domain/port/notes-gateway/NotesGateway.js";
+  "src/frontend/notes/query/list-notes/list-notes.dto.ts": "export class ListNotesQuery {}\n",
+  "src/frontend/notes/query/list-notes/list-notes.handler.ts": `import type { NotesGateway } from "#context/domain/port/notes-gateway/NotesGateway.js";
 
 export class ListNotesHandler {
   constructor(private notes: NotesGateway) {}
 }
 `,
   "src/frontend/notes/presentation/NotesFrontend.ts": "export type NotesFrontend = { events: object };\n",
-  "src/frontend/notes/application/event/NoteLabelChosen.ts": `export class NoteLabelChosen {
+  "src/frontend/notes/event/NoteLabelChosen.ts": `export class NoteLabelChosen {
   readonly type = "notes.label-chosen" as const;
 }
 `,
-  "src/frontend/notes/presentation/store/notesStore.ts": `import { ListNotesQuery } from "#context/application/query/list-notes/list-notes.dto.js";
+  "src/frontend/notes/presentation/store/notesStore.ts": `import { ListNotesQuery } from "#context/query/list-notes/list-notes.dto.js";
 
 export default { send: () => new ListNotesQuery() };
 `,
   "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko": `import { frontendOf } from "@ingenioz-it/caits/di/frontend";
-import { NotesRequested } from "#context/application/event/NotesRequested.js";
+import { NotesRequested } from "#context/event/NotesRequested.js";
 import "./NotesBlock.scss";
 
 <button onClick() { frontendOf($global, "notes").events.publish(new NotesRequested()); }>Charger</button>
@@ -150,7 +150,7 @@ import "./NotesBlock.scss";
   "src/frontend/notes/presentation/view/notes-block/NotesBlock.scss": ".notes-block { color: var(--ink); }\n",
   "src/frontend/notes/presentation/view/notes-count/NotesCount.marko": 'import NoteLabel from "#context/presentation/component/note-label/NoteLabel.marko";\n\n<NoteLabel label=input.label/>\n',
   "src/frontend/notes/presentation/component/note-label/NoteLabel.marko": `import { frontendOf } from "@ingenioz-it/caits/di/frontend";
-import { NoteLabelChosen } from "#context/application/event/NoteLabelChosen.js";
+import { NoteLabelChosen } from "#context/event/NoteLabelChosen.js";
 import type { Label } from "#frontend-shared/domain/value-object/Label.js";
 import "./NoteLabel.scss";
 
@@ -160,11 +160,11 @@ export interface Input { label: Label }
 `,
   "src/frontend/notes/presentation/component/note-label/NoteLabel.scss": ".note-label { color: var(--ink); }\n",
   "src/frontend/shared/di.ts": "export default [];\n",
-  "src/frontend/shared/application/event/LabelChosen.ts": 'export class LabelChosen {\n  readonly type = "shared.label-chosen" as const;\n}\n',
+  "src/frontend/shared/event/LabelChosen.ts": 'export class LabelChosen {\n  readonly type = "shared.label-chosen" as const;\n}\n',
   "src/frontend/notes/context-map.ts": `import { share, when } from "@ingenioz-it/caits/messaging/FrontendContextMap";
-import { LabelChosen } from "#frontend-shared/application/event/LabelChosen.js";
-import { NoteLabelChosen } from "#context/application/event/NoteLabelChosen.js";
-import { NotesRequested } from "#context/application/event/NotesRequested.js";
+import { LabelChosen } from "#frontend-shared/event/LabelChosen.js";
+import { NoteLabelChosen } from "#context/event/NoteLabelChosen.js";
+import { NotesRequested } from "#context/event/NotesRequested.js";
 
 export default [when(LabelChosen, () => [new NotesRequested()]), share(NoteLabelChosen, () => [new LabelChosen()])];
 `,
@@ -185,7 +185,7 @@ export default [when(LabelChosen, () => [new NotesRequested()]), share(NoteLabel
 `,
   "src/routes/_frontend/`notes.xml`/+handler.ts": 'export { notesFeed as GET } from "#frontend/notes/presentation/view/notes-feed/notesFeed.js";\n',
   "src/routes/_backend/api/notes/+handler.ts": `import { controller } from "@ingenioz-it/caits/di/backend";
-import { AddNoteHttpController } from "#backend/notes/presentation/add-note-http/add-note-http.controller.js";
+import { AddNoteHttpController } from "#backend/notes/command/add-note/add-note.http.controller.js";
 
 export const POST = () => controller(AddNoteHttpController);
 `
@@ -193,16 +193,16 @@ export const POST = () => controller(AddNoteHttpController);
 
 /** The imports of the context map of notes, in the frontend. */
 const FRONTEND_MAP_IMPORTS = `import { share, when } from "@ingenioz-it/caits/messaging/FrontendContextMap";
-import { LabelChosen } from "#frontend-shared/application/event/LabelChosen.js";
-import { NoteLabelChosen } from "#context/application/event/NoteLabelChosen.js";
-import { NotesRequested } from "#context/application/event/NotesRequested.js";
+import { LabelChosen } from "#frontend-shared/event/LabelChosen.js";
+import { NoteLabelChosen } from "#context/event/NoteLabelChosen.js";
+import { NotesRequested } from "#context/event/NotesRequested.js";
 `;
 
 /** The violations of the project with these files added or changed, as [rule, file]. */
 const violationsWith = (files = {}) => checkArchitecture(ROOT, Object.entries({ ...project, ...files }).map(([path, text]) => ({ path, text })), rules)
   .violations.map(({ rule, file }) => [rule, file]);
 
-const handler = "src/backend/notes/application/command/add-note/add-note.handler.ts";
+const handler = "src/backend/notes/command/add-note/add-note.handler.ts";
 const entity = "src/backend/notes/domain/entity/Note.ts";
 const store = "src/frontend/notes/presentation/store/notesStore.ts";
 const contextMap = "src/backend/notes/context-map.ts";
@@ -246,23 +246,27 @@ const cases = [
   { rule: "domain-uses-kernel-primitives", breaks: "an entity imports a bus of the kernel", files: { [entity]: 'import { FrontendEventBus } from "@ingenioz-it/caits/messaging/FrontendEventBus";\n\nexport class Note { bus?: FrontendEventBus; }\n' } },
   { rule: "entity-without-port", breaks: "an entity imports a port", files: { [entity]: 'import type { NoteRepository } from "#context/domain/port/note-repository/NoteRepository.js";\n\nexport class Note { repository?: NoteRepository; }\n' } },
 
-  { rule: "backend-application-shape", breaks: "a use case holds a helper", files: { "src/backend/notes/application/command/add-note/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
+  { rule: "backend-use-case-shape", breaks: "a use case holds a helper", files: { "src/backend/notes/command/add-note/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
+  { rule: "frontend-use-case-shape", breaks: "a use case of the frontend has a controller", files: { "src/frontend/notes/query/list-notes/list-notes.http.controller.ts": "export class ListNotesHttpController {}\n" } },
+  {
+    rule: "use-cases-isolated", breaks: "a controller sends the DTO of another use case",
+    files: { "src/backend/notes/query/list-notes/list-notes.http.controller.ts": 'import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";\n\nexport class ListNotesHttpController extends Controller { toDto() { return new AddNoteCommand(); } }\n' }
+  },
   { rule: "handler-answers-output", breaks: "a handler gives no Output DTO", files: { [handler]: "export class AddNoteHandler { execute(): void {} }\n" } },
-  { rule: "frontend-application-shape", breaks: "the application holds a helper", files: { "src/frontend/notes/application/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
+  { rule: "controller-extends-controller", breaks: "a controller does not extend the Controller of the kernel", files: { "src/backend/notes/command/add-note/add-note.http.controller.ts": "export class AddNoteHttpController {}\n" } },
+  { rule: "frontend-event-shape", breaks: "the events hold a folder", files: { "src/frontend/notes/event/loaded/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\n' } },
   {
     rule: "event-file-exports-its-event", breaks: "an event file exports a constant too",
-    files: { "src/frontend/notes/application/event/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\nexport const LIMIT = 10;\n' }
+    files: { "src/frontend/notes/event/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\nexport const LIMIT = 10;\n' }
   },
-  { rule: "event-type-names-context", breaks: "the type of an event is not its name", files: { "src/frontend/notes/application/event/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.load" as const; }\n' } },
+  { rule: "event-type-names-context", breaks: "the type of an event is not its name", files: { "src/frontend/notes/event/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.load" as const; }\n' } },
 
-  { rule: "backend-presentation-shape", breaks: "a controller folder holds a helper", files: { "src/backend/notes/presentation/add-note-http/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
-  { rule: "controller-extends-controller", breaks: "a controller does not extend the Controller of the kernel", files: { "src/backend/notes/presentation/add-note-http/add-note-http.controller.ts": "export class AddNoteHttpController {}\n" } },
   { rule: "frontend-presentation-shape", breaks: "the presentation holds a helper out of a view", files: { "src/frontend/notes/presentation/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
   { rule: "zod-in-presentation", breaks: "an entity imports zod", files: { [entity]: 'import { z } from "zod";\n\nexport class Note { static readonly schema = z.string(); }\n' } },
   { rule: "marko-in-frontend-presentation", breaks: "a handler imports Marko", files: { [handler]: 'import "marko";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
   {
     rule: "dtos-sent-by-store", breaks: "a file of a view imports an input DTO",
-    files: { "src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts": 'import { ListNotesQuery } from "#context/application/query/list-notes/list-notes.dto.js";\n\nexport const query = () => new ListNotesQuery();\n' }
+    files: { "src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts": 'import { ListNotesQuery } from "#context/query/list-notes/list-notes.dto.js";\n\nexport const query = () => new ListNotesQuery();\n' }
   },
   { rule: "events-built-with-new", breaks: "a view makes an event as an object", files: { "src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts": 'export const requested = { type: "notes.requested" };\n' } },
   {
@@ -290,11 +294,11 @@ const cases = [
   { rule: "context-content", breaks: "a context holds a helper out of its layers", files: { "src/backend/notes/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
   {
     rule: "context-map-translates-shared", breaks: "a context map imports a handler",
-    files: { "src/frontend/notes/context-map.ts": 'import "#context/application/query/list-notes/list-notes.handler.js";\n\nexport default [];\n' }
+    files: { "src/frontend/notes/context-map.ts": 'import "#context/query/list-notes/list-notes.handler.js";\n\nexport default [];\n' }
   },
   {
     rule: "context-map-holds-lines", breaks: "a context map exports its lines under a name",
-    files: { "src/frontend/notes/context-map.ts": 'import { when } from "@ingenioz-it/caits/messaging/FrontendContextMap";\nimport { LabelChosen } from "#frontend-shared/application/event/LabelChosen.js";\nimport { NotesRequested } from "#context/application/event/NotesRequested.js";\n\nexport const lines = [when(LabelChosen, () => [new NotesRequested()])];\n' }
+    files: { "src/frontend/notes/context-map.ts": 'import { when } from "@ingenioz-it/caits/messaging/FrontendContextMap";\nimport { LabelChosen } from "#frontend-shared/event/LabelChosen.js";\nimport { NotesRequested } from "#context/event/NotesRequested.js";\n\nexport const lines = [when(LabelChosen, () => [new NotesRequested()])];\n' }
   },
   {
     rule: "context-map-line-direction", breaks: "a line hears an event of its own context",
@@ -306,7 +310,7 @@ const cases = [
   },
   {
     rule: "shared-events-in-map", breaks: "a view publishes an event of shared",
-    files: { "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko": 'import { LabelChosen } from "#frontend-shared/application/event/LabelChosen.js";\n\n<button onClick() { frontendOf($global, "notes").events.publish(new LabelChosen()); }>Choisir</button>\n' }
+    files: { "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko": 'import { LabelChosen } from "#frontend-shared/event/LabelChosen.js";\n\n<button onClick() { frontendOf($global, "notes").events.publish(new LabelChosen()); }>Choisir</button>\n' }
   },
   { rule: "shared-hears-no-context", breaks: "the context shared has a context map", files: { "src/frontend/shared/context-map.ts": "export default [];\n" } },
   {
@@ -323,10 +327,10 @@ const cases = [
     rule: "shared-components-placed-by-tag", breaks: "a context imports the file of a component of shared",
     files: { "src/frontend/notes/presentation/view/notes-count/NotesCount.marko": 'import Badge from "#frontend-shared/presentation/component/badge/index.marko";\n\n<Badge label=input.label/>\n' }
   },
-  { rule: "imports-by-shortcut", breaks: "a handler imports by going up folders", files: { [handler]: 'import "../../../domain/entity/Note.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
+  { rule: "imports-by-shortcut", breaks: "a handler imports by going up folders", files: { [handler]: 'import "../../domain/entity/Note.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
   { rule: "contexts-isolated", breaks: "a context imports another context", files: { [handler]: 'import "#backend/alerts/domain/event/AlertRaised.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
-  { rule: "sides-apart", breaks: "the frontend imports the backend", files: { [store]: 'import { AddNoteCommand } from "#backend/notes/application/command/add-note/add-note.dto.js";\n\nexport default { send: () => new AddNoteCommand() };\n' } },
-  { rule: "layer-direction", breaks: "the domain imports the application", files: { [entity]: 'import { AddNoteCommand } from "#context/application/command/add-note/add-note.dto.js";\n\nexport class Note { command?: AddNoteCommand; }\n' } },
+  { rule: "sides-apart", breaks: "the frontend imports the backend", files: { [store]: 'import { AddNoteCommand } from "#backend/notes/command/add-note/add-note.dto.js";\n\nexport default { send: () => new AddNoteCommand() };\n' } },
+  { rule: "layer-direction", breaks: "the domain imports the application", files: { [entity]: 'import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";\n\nexport class Note { command?: AddNoteCommand; }\n' } },
   { rule: "contexts-without-routes", breaks: "a handler imports a route", files: { [handler]: 'import "/src/routes/_backend/api/notes/+handler.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
 
   { rule: "routes-folders", breaks: "a route is out of _frontend and _backend", files: { "src/routes/api/+handler.ts": "export const GET = () => null;\n" } },
@@ -334,9 +338,9 @@ const cases = [
   { rule: "backend-routes-content", breaks: "the backend routes hold a helper", files: { "src/routes/_backend/api/notes/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
   {
     rule: "routes-on-their-side", breaks: "a frontend route imports the backend",
-    files: { "src/routes/_frontend/component/Notes.marko": 'import "#backend/notes/presentation/add-note-http/add-note-http.controller.js";\n\n<p>Notes</p>\n' }
+    files: { "src/routes/_frontend/component/Notes.marko": 'import "#backend/notes/command/add-note/add-note.http.controller.js";\n\n<p>Notes</p>\n' }
   },
-  { rule: "routes-through-presentation", breaks: "a route imports an input DTO", files: { [backendRoute]: 'import "#backend/notes/application/command/add-note/add-note.dto.js";\n' } },
+  { rule: "routes-through-presentation", breaks: "a route imports an input DTO", files: { [backendRoute]: 'import "#backend/notes/command/add-note/add-note.dto.js";\n' } },
   { rule: "routes-take-no-frontend", breaks: "a page takes a frontend", files: { "src/routes/_frontend/+page.marko": '<button onClick() { frontendOf($global, "notes"); }>Charger</button>\n' } },
 
   { rule: "no-test-environment", breaks: "a handler imports a test.di.ts", files: { [handler]: 'import "#context/test.di.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
@@ -362,6 +366,50 @@ describe("the architecture rules", () => {
 
   test("each rule has a case that breaks it", () => {
     expect(cases.map(({ rule }) => rule)).toEqual(rules.map(({ name }) => name));
+  });
+});
+
+describe("the use cases", () => {
+  const useCase = "src/backend/notes/command/add-note";
+
+  test("an endpoint lives in one folder: the DTOs, the handler and the controller of its use case, with their tests", () => {
+    expect(violationsWith({
+      [`${useCase}/add-note.application.test.ts`]: "test();\n",
+      [`${useCase}/add-note.http.presentation.test.ts`]: "test();\n",
+      [`${useCase}/add-note.form.controller.ts`]: 'import { Controller } from "@ingenioz-it/caits/messaging/Controller";\n\nexport class AddNoteFormController extends Controller {}\n'
+    })).toEqual([]);
+  });
+
+  test.for([
+    ["the test of the handler", "src/backend/notes/command/add-note/add-note.test.ts", "backend-use-case-shape"],
+    ["the test of a controller", "src/backend/notes/command/add-note/add-note.http.test.ts", "backend-use-case-shape"],
+    ["the test of a use case of the frontend", "src/frontend/notes/query/list-notes/list-notes.test.ts", "frontend-use-case-shape"]
+  ])("the name of a test of a use case says the layer that it tests, application or presentation: %s", ([, file, rule]) => {
+    expect(violationsWith({ [file]: "test();\n" })).toEqual([[rule, file]]);
+  });
+
+  test("the controller is of the presentation: the handler of its use case does not import it", () => {
+    expect(violationsWith({ [handler]: 'import "./add-note.http.controller.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }))
+      .toEqual([["layer-direction", handler]]);
+  });
+
+  test("a use case imports nothing from a use case of the context shared either", () => {
+    expect(violationsWith({ [handler]: 'import "#shared/command/announce/announce.dto.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }))
+      .toEqual([["use-cases-isolated", handler]]);
+  });
+
+  test.for([
+    ["the use cases in application/", "src/backend/notes/application/command/add-note/add-note.handler.ts"],
+    ["the controllers in presentation/", "src/backend/notes/presentation/add-note-http/add-note-http.controller.ts"],
+    ["the use cases of the frontend in application/", "src/frontend/notes/application/query/list-notes/list-notes.handler.ts"],
+    ["the events of the frontend in application/", "src/frontend/notes/application/event/NotesLoaded.ts"]
+  ])("a context holds no layer folder but its domain, its infra, and, in the frontend, its events and its presentation: %s", ([, file]) => {
+    expect(violationsWith({ [file]: "export class Moved {}\n" })).toEqual([["context-content", file]]);
+  });
+
+  test("an event of the frontend is in event/, not in a use case", () => {
+    const event = "src/frontend/notes/query/list-notes/NotesLoaded.ts";
+    expect(violationsWith({ [event]: 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\n' })).toEqual([["frontend-use-case-shape", event]]);
   });
 });
 
@@ -435,7 +483,7 @@ describe("the components of the frontend", () => {
   const component = "src/frontend/notes/presentation/component/note-label/NoteLabel.marko";
 
   test("a component takes the frontend of its context, publishes its events and reads its store", () => {
-    const imports = 'import { frontendOf } from "@ingenioz-it/caits/di/frontend";\nimport { NotesRequested } from "#context/application/event/NotesRequested.js";\nimport type { NotesState } from "#context/presentation/store/notesStore.js";\n';
+    const imports = 'import { frontendOf } from "@ingenioz-it/caits/di/frontend";\nimport { NotesRequested } from "#context/event/NotesRequested.js";\nimport type { NotesState } from "#context/presentation/store/notesStore.js";\n';
     const markup = '<button onClick() { frontendOf($global, "notes").events.publish(new NotesRequested()); }>Notes</button>\n';
     expect(violationsWith({ [component]: `${imports}\n${markup}` })).toEqual([]);
   });
@@ -453,7 +501,7 @@ describe("the components of the frontend", () => {
 
 describe("the events of shared in the frontend", () => {
   const view = "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko";
-  const labelChosen = 'import { LabelChosen } from "#frontend-shared/application/event/LabelChosen.js";\n';
+  const labelChosen = 'import { LabelChosen } from "#frontend-shared/event/LabelChosen.js";\n';
 
   test("a context tells the other contexts through its context map: its views take no frontend of shared", () => {
     expect(violationsWith({ [view]: '<button onClick() { frontendOf($global, "shared"); }>Choisir</button>\n' })).toEqual([["views-take-own-frontend", view]]);
@@ -462,7 +510,7 @@ describe("the events of shared in the frontend", () => {
   test("a component, the store, a handler and an adapter import no event of shared: the context map shares them, and hears them", () => {
     const component = "src/frontend/notes/presentation/component/note-label/NoteLabel.marko";
     const store = "src/frontend/notes/presentation/store/notesStore.ts";
-    const frontendHandler = "src/frontend/notes/application/query/list-notes/list-notes.handler.ts";
+    const frontendHandler = "src/frontend/notes/query/list-notes/list-notes.handler.ts";
     const adapter = "src/frontend/notes/infra/notes-gateway/http-notes-gateway.ts";
     expect(violationsWith({
       [component]: `${labelChosen}\n<p>Notes</p>\n`,
@@ -483,7 +531,7 @@ describe("the events of shared in the frontend", () => {
 
   test("the components of shared publish its events on its bus, the shared bus", () => {
     const badge = "src/frontend/shared/presentation/component/badge/index.marko";
-    const imports = 'import { frontendOf } from "@ingenioz-it/caits/di/frontend";\nimport { LabelChosen } from "#context/application/event/LabelChosen.js";\n';
+    const imports = 'import { frontendOf } from "@ingenioz-it/caits/di/frontend";\nimport { LabelChosen } from "#context/event/LabelChosen.js";\n';
     expect(violationsWith({ [badge]: `${imports}\n<button onClick() { frontendOf($global, "shared").events.publish(new LabelChosen()); }>Choisir</button>\n` })).toEqual([]);
   });
 });
@@ -492,7 +540,7 @@ describe("the events of shared in the backend", () => {
   const notePosted = 'import { NotePosted } from "#shared/domain/event/NotePosted.js";\n';
 
   test("a handler, an entity, a controller, an adapter and a di.ts import no event of shared: the context map shares them, and hears them", () => {
-    const controller = "src/backend/notes/presentation/add-note-http/add-note-http.controller.ts";
+    const controller = "src/backend/notes/command/add-note/add-note.http.controller.ts";
     const adapter = "src/backend/notes/infra/note-repository/in-memory-note-repository.ts";
     const di = "src/backend/notes/di.ts";
     expect(violationsWith({
@@ -514,10 +562,10 @@ describe("the events of shared in the backend", () => {
   });
 
   test("the handlers of the context shared publish its events", () => {
-    const announce = "src/backend/shared/application/command/announce/announce.handler.ts";
+    const announce = "src/backend/shared/command/announce/announce.handler.ts";
     const imports = 'import { NotePosted } from "#context/domain/event/NotePosted.js";\nimport { AnnounceOutput } from "./announce.dto.js";\n';
     expect(violationsWith({
-      "src/backend/shared/application/command/announce/announce.dto.ts": "export class AnnounceCommand {}\nexport class AnnounceOutput {}\n",
+      "src/backend/shared/command/announce/announce.dto.ts": "export class AnnounceCommand {}\nexport class AnnounceOutput {}\n",
       [announce]: `${imports}\nexport class AnnounceHandler { execute(): AnnounceOutput { void new NotePosted(); return new AnnounceOutput(); } }\n`
     })).toEqual([]);
   });
@@ -531,12 +579,12 @@ describe("the context maps of the frontend", () => {
 
   test("a context map translates between the events of shared and those of its context: it imports no other context", () => {
     const map = "src/frontend/notes/context-map.ts";
-    expect(violationsWith({ [map]: 'import "#frontend/alerts/application/event/AlertRaised.js";\n\nexport default [];\n' })).toEqual([["contexts-isolated", map]]);
+    expect(violationsWith({ [map]: 'import "#frontend/alerts/event/AlertRaised.js";\n\nexport default [];\n' })).toEqual([["contexts-isolated", map]]);
   });
 
   test("a context map of the backend translates between the events of shared and those of its context: it imports neither a handler nor another context", () => {
-    expect(violationsWith({ [contextMap]: `import "#context/application/command/add-note/add-note.handler.js";\n${project[contextMap]}` })).toEqual([["context-map-translates-shared", contextMap]]);
-    expect(violationsWith({ [contextMap]: `import "#backend/alerts/application/command/raise/raise.dto.js";\n${project[contextMap]}` })).toEqual([["contexts-isolated", contextMap]]);
+    expect(violationsWith({ [contextMap]: `import "#context/command/add-note/add-note.handler.js";\n${project[contextMap]}` })).toEqual([["context-map-translates-shared", contextMap]]);
+    expect(violationsWith({ [contextMap]: `import "#backend/alerts/command/raise/raise.dto.js";\n${project[contextMap]}` })).toEqual([["contexts-isolated", contextMap]]);
   });
 
   test("the backend has no context map of its whole: src/backend holds the contexts, and the integration tests of the whole backend", () => {
@@ -556,7 +604,7 @@ describe("the context maps of the frontend", () => {
 describe("the lines of the context maps", () => {
   const frontendMap = "src/frontend/notes/context-map.ts";
   const backendImports = `import { share, when } from "@ingenioz-it/caits/messaging/ContextMap";
-import { AddNoteCommand } from "#context/application/command/add-note/add-note.dto.js";
+import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";
 import { NoteAdded } from "#context/domain/event/NoteAdded.js";
 import { NotePosted } from "#shared/domain/event/NotePosted.js";
 import { UserJoined } from "#shared/domain/event/UserJoined.js";
@@ -610,19 +658,19 @@ import { UserJoined } from "#shared/domain/event/UserJoined.js";
     const alertsMap = "src/frontend/alerts/context-map.ts";
     const files = {
       "src/frontend/alerts/di.ts": "export default [];\n",
-      "src/frontend/alerts/application/event/AlertShown.ts": 'export class AlertShown {\n  readonly type = "alerts.shown" as const;\n}\n',
-      "src/frontend/shared/application/event/ThemeAsked.ts": 'export class ThemeAsked {\n  readonly type = "shared.theme-asked" as const;\n}\n',
+      "src/frontend/alerts/event/AlertShown.ts": 'export class AlertShown {\n  readonly type = "alerts.shown" as const;\n}\n',
+      "src/frontend/shared/event/ThemeAsked.ts": 'export class ThemeAsked {\n  readonly type = "shared.theme-asked" as const;\n}\n',
       [alertsMap]: `import { share, when } from "@ingenioz-it/caits/messaging/FrontendContextMap";
-import { AlertShown } from "#context/application/event/AlertShown.js";
-import { LabelChosen } from "#frontend-shared/application/event/LabelChosen.js";
-import { ThemeAsked } from "#frontend-shared/application/event/ThemeAsked.js";
+import { AlertShown } from "#context/event/AlertShown.js";
+import { LabelChosen } from "#frontend-shared/event/LabelChosen.js";
+import { ThemeAsked } from "#frontend-shared/event/ThemeAsked.js";
 
 export default [when(LabelChosen, () => [new AlertShown()]), share(AlertShown, () => [new ThemeAsked()])];
 `
     };
     expect(messagesOf(files)).toEqual([]);
 
-    const notes = `${FRONTEND_MAP_IMPORTS}import { ThemeAsked } from "#frontend-shared/application/event/ThemeAsked.js";\n\nexport default [when(ThemeAsked, () => [new NoteLabelChosen()]), share(NoteLabelChosen, () => [new LabelChosen()])];\n`;
+    const notes = `${FRONTEND_MAP_IMPORTS}import { ThemeAsked } from "#frontend-shared/event/ThemeAsked.js";\n\nexport default [when(ThemeAsked, () => [new NoteLabelChosen()]), share(NoteLabelChosen, () => [new LabelChosen()])];\n`;
     expect(violationsWith({ ...files, [frontendMap]: notes })).toEqual([["context-maps-without-cycle", alertsMap]]);
     expect(messagesOf({ ...files, [frontendMap]: notes })).toEqual([
       ["context-maps-without-cycle", "the context maps make a cycle, which the buses would carry without end: AlertShown → ThemeAsked → NoteLabelChosen → LabelChosen → AlertShown"]

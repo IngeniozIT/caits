@@ -1,5 +1,5 @@
 import { Controller } from "@ingenioz-it/caits/messaging/Controller";
-import { GreetCommand, type GreetOutput } from "../../application/command/greet/greet.dto.js";
+import { GreetCommand, type GreetOutput } from "./greet.dto.js";
 
 export class GreetHttpController extends Controller<GreetCommand, GreetOutput> {
   protected toDto(request: Request): GreetCommand {

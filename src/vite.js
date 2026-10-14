@@ -58,16 +58,16 @@ function dependencies(source) {
 const CONTEXT_MODULES = {
   "virtual:kernel/backend": [
     ["bindings", "backend/*/di.ts", true],
-    ["dtos", "backend/*/application/*/*/*.dto.ts"],
-    ["handlers", "backend/*/application/*/*/*.handler.ts"],
-    ["controllers", "backend/*/presentation/*/*.controller.ts"],
+    ["dtos", "backend/*/{command,query}/*/*.dto.ts"],
+    ["handlers", "backend/*/{command,query}/*/*.handler.ts"],
+    ["controllers", "backend/*/{command,query}/*/*.controller.ts"],
     ["maps", "backend/*/context-map.ts", true]
   ],
   "virtual:kernel/backend-test": [["bindings", "backend/*/test.di.ts", true]],
   "virtual:kernel/frontend": [
     ["bindings", "frontend/*/di.ts", true],
-    ["dtos", "frontend/*/application/*/*/*.dto.ts"],
-    ["handlers", "frontend/*/application/*/*/*.handler.ts"],
+    ["dtos", "frontend/*/{command,query}/*/*.dto.ts"],
+    ["handlers", "frontend/*/{command,query}/*/*.handler.ts"],
     ["stores", "frontend/*/presentation/store/*Store.ts", true],
     ["maps", "frontend/*/context-map.ts", true]
   ],
@@ -87,9 +87,9 @@ function contexts(source) {
   /** @type {(pattern: string, onlyDefault?: boolean) => string} */
   const glob = (pattern, onlyDefault = false) =>
     `import.meta.glob(${JSON.stringify(`${source}/${pattern}`)}, { eager: true${onlyDefault ? `, import: "default"` : ""} })`;
-  /** A pattern as a regular expression: `*` is a part of a name, without "/". */
-  const matcherOf = (/** @type {string} */ pattern) =>
-    new RegExp(`^${`${source}/${pattern}`.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", "[^/]*")}$`);
+  /** A pattern as a regular expression: `*` is a part of a name, without "/", and `{command,query}` one of these names. */
+  const matcherOf = (/** @type {string} */ pattern) => new RegExp(`^${`${source}/${pattern}`.replace(/[.+?^$()|[\]\\]/g, "\\$&").replaceAll("*", "[^/]*")
+    .replace(/\{([^}]*)\}/g, (/** @type {string} */ _, /** @type {string} */ names) => `(?:${names.split(",").join("|")})`)}$`);
   const modules = Object.entries(CONTEXT_MODULES).map(([id, exports]) => ({
     id,
     code: exports.map(([name, pattern, onlyDefault]) => `export const ${name} = ${glob(pattern, onlyDefault)};`).join("\n"),

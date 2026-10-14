@@ -104,7 +104,7 @@ export const rules = [
   },
   {
     name: "core-without-node",
-    description: "The domain and the application do not import Node APIs (node:*). Node APIs are technology: they stay in the infra.",
+    description: "The domain and the application (the handlers and the DTOs of the use cases, and the events of the frontend) do not import Node APIs (node:*). Node APIs are technology: they stay in the infra.",
     on: "import",
     check: ({ from, specifier }) => isCore(from) && isNode(specifier) && "domain and application stay free of Node APIs"
   },
@@ -117,42 +117,68 @@ export const rules = [
   },
   {
     name: "entity-without-port",
-    description: "An entity or a value object does not import a port. It holds the business rules; the application calls the ports.",
+    description: "An entity or a value object does not import a port. It holds the business rules; the handlers call the ports.",
     on: "import",
     check: ({ file, from, target }) => from.layer === "domain" && /\/domain\/(entity|value-object)\//.test(file.path) && /\/domain\/port\//.test(target)
-      && "an entity or a value object holds business rules: it never talks to a port, the application orchestrates"
+      && "an entity or a value object holds business rules: it never talks to a port, the handlers orchestrate"
   },
 
-  // Application: the use cases, and the events of the frontend
+  // Use cases: one folder each, in command/ or query/, with its DTOs, its handler, its controllers and their tests
 
   {
-    name: "backend-application-shape",
-    description: "The application of a backend context holds only use cases. Each use case has its folder, command/{usecase}/ or query/{usecase}/, with its handler, its DTOs and its test.",
+    name: "backend-use-case-shape",
+    description: "A use case of a backend context has its folder, command/{usecase}/ or query/{usecase}/, which holds all of it: its DTOs, its handler and its test, {usecase}.application.test.ts, and its controllers, {usecase}.{name}.controller.ts, each with its test, {usecase}.{name}.presentation.test.ts. An endpoint lives in one folder, and the name of each test says the layer that it tests.",
     on: "file",
-    check: ({ path }) => /^src\/backend\/[^/]+\/application\//.test(path) && !/^src\/backend\/[^/]+\/application\/(command|query)\/([a-z0-9-]+)\/\2\.(handler|dto|test)\.ts$/.test(path)
-      && "application holds only {usecase}.handler.ts, {usecase}.dto.ts and {usecase}.test.ts in command/{usecase}/ or query/{usecase}/"
+    check: ({ path }) => /^src\/backend\/[^/]+\/(command|query)\//.test(path)
+      && !/^src\/backend\/[^/]+\/(command|query)\/([a-z0-9-]+)\/\2(\.(handler|dto|application\.test)|\.[a-z0-9-]+\.(controller|presentation\.test))\.ts$/.test(path)
+      && "a use case holds only {usecase}.dto.ts, {usecase}.handler.ts, {usecase}.application.test.ts, and its controllers {usecase}.{name}.controller.ts with their tests {usecase}.{name}.presentation.test.ts, in command/{usecase}/ or query/{usecase}/"
+  },
+  {
+    name: "frontend-use-case-shape",
+    description: "A use case of a frontend context has its folder, command/{usecase}/ or query/{usecase}/, with its DTOs, its handler and its test, {usecase}.application.test.ts. The store sends its input DTOs: a use case of the frontend has no controller.",
+    on: "file",
+    check: ({ path }) => /^src\/frontend\/[^/]+\/(command|query)\//.test(path) && !/^src\/frontend\/[^/]+\/(command|query)\/([a-z0-9-]+)\/\2\.(handler|dto|application\.test)\.ts$/.test(path)
+      && "a use case of the frontend holds only {usecase}.dto.ts, {usecase}.handler.ts and {usecase}.application.test.ts in command/{usecase}/ or query/{usecase}/: the store sends its DTOs"
+  },
+  {
+    name: "use-cases-isolated",
+    description: "A use case imports nothing from another use case, of its context or of the context shared: each one holds all that it needs, and what two use cases share lives in the domain. Thus a use case changes, and goes, alone.",
+    on: "import",
+    check: ({ from, to }) => from.useCase && to.useCase && to.side === from.side && (to.context === from.context || to.context === "shared")
+      && (to.context !== from.context || to.useCase !== from.useCase)
+      && `a use case imports nothing from another use case (${to.useCase}): what two use cases share lives in the domain`
   },
   {
     name: "handler-answers-output",
     description: "A backend handler gives its result as an Output DTO: it makes a `new …Output(…)`.",
     on: "file",
-    check: ({ path, constructed }) => /^src\/backend\/[^/]+\/application\/.+\.handler\.ts$/.test(path) && !constructed.some(name => name !== null && /^\w+Output$/.test(name))
+    check: ({ path, constructed }) => /^src\/backend\/[^/]+\/(command|query)\/[^/]+\/[^/]+\.handler\.ts$/.test(path) && !constructed.some(name => name !== null && /^\w+Output$/.test(name))
       && "a handler answers with `new SomethingOutput(…)`"
   },
   {
-    name: "frontend-application-shape",
-    description: "The application of a frontend context holds its use cases, as in the backend, and its events, one file per event in event/.",
+    name: "controller-extends-controller",
+    description: "A controller is an exported class …Controller that extends the Controller of the kernel.",
     on: "file",
-    check: ({ path }) => /^src\/frontend\/[^/]+\/application\//.test(path)
-      && !/^src\/frontend\/[^/]+\/application\/((command|query)\/([a-z0-9-]+)\/\3\.(handler|dto|test)|event\/[A-Z]\w*)\.ts$/.test(path)
-      && "a frontend application holds only {usecase}.handler.ts, {usecase}.dto.ts and {usecase}.test.ts in command/{usecase}/ or query/{usecase}/ and event/{Event}.ts"
+    check: ({ path, classes }) => /^src\/backend\/[^/]+\/(command|query)\/[^/]+\/[^/]+\.controller\.ts$/.test(path)
+      && !classes.some(({ exported, name, extends: parent }) => exported && name !== null && /^\w+Controller$/.test(name) && parent === "Controller")
+      && "a controller is an exported class …Controller that extends the kernel's Controller"
+  },
+
+  // Events of the frontend: what its views, its handlers and its context map publish
+
+  {
+    name: "frontend-event-shape",
+    description: "The events of a frontend context are in event/, one file per event: event/{Event}.ts.",
+    on: "file",
+    check: ({ path }) => /^src\/frontend\/[^/]+\/event\//.test(path) && !/^src\/frontend\/[^/]+\/event\/[A-Z]\w*\.ts$/.test(path)
+      && "the events of a frontend context are in event/, one file per event: event/{Event}.ts"
   },
   {
     name: "event-file-exports-its-event",
     description: "A frontend event file exports one name only: the event, with the name of the file.",
     on: "file",
     check: ({ path, exports }) => {
-      const event = /^src\/frontend\/[^/]+\/application\/event\/(\w+)\.ts$/.exec(path)?.[1];
+      const event = /^src\/frontend\/[^/]+\/event\/(\w+)\.ts$/.exec(path)?.[1];
       if (!event) return;
       if (exports.length !== 1) return `an event file has exactly one export (found ${exports.length})`;
       return (exports[0].name !== event || !["class", "type"].includes(exports[0].kind)) && `event/${event}.ts exports ${event}`;
@@ -163,7 +189,7 @@ export const rules = [
     description: "A frontend event class has `readonly type = \"{context}.{event}\" as const`. The store reads this type: the context, then the name of the event without the context, in kebab-case.",
     on: "file",
     check: ({ path, classes }) => {
-      const [, context, event] = /^src\/frontend\/([^/]+)\/application\/event\/(\w+)\.ts$/.exec(path) ?? [];
+      const [, context, event] = /^src\/frontend\/([^/]+)\/event\/(\w+)\.ts$/.exec(path) ?? [];
       const declared = event && classes.find(({ exported, name }) => exported && name === event);
       if (!context || !declared) return;
       const type = typeOfEvent(context, event);
@@ -172,23 +198,8 @@ export const rules = [
     }
   },
 
-  // Presentation: the controllers of the backend, the views and the stores of the frontend
+  // Presentation: the views, the components and the store of the frontend; the controllers live in their use cases
 
-  {
-    name: "backend-presentation-shape",
-    description: "The presentation of a backend context holds only controllers, each in its folder {name}/ with its test.",
-    on: "file",
-    check: ({ path }) => /^src\/backend\/[^/]+\/presentation\//.test(path) && !/^src\/backend\/[^/]+\/presentation\/([a-z0-9-]+)\/\1\.(controller|test)\.ts$/.test(path)
-      && "presentation holds only {name}/{name}.controller.ts and {name}/{name}.test.ts"
-  },
-  {
-    name: "controller-extends-controller",
-    description: "A controller is an exported class …Controller that extends the Controller of the kernel.",
-    on: "file",
-    check: ({ path, classes }) => /^src\/backend\/[^/]+\/presentation\/.+\.controller\.ts$/.test(path)
-      && !classes.some(({ exported, name, extends: parent }) => exported && name !== null && /^\w+Controller$/.test(name) && parent === "Controller")
-      && "a controller is an exported class …Controller that extends the kernel's Controller"
-  },
   {
     name: "frontend-presentation-shape",
     description: "The presentation of a frontend context holds only its views (one folder per view), its components (one folder per component: what its views share), its store and the type of its frontend. The pages are in the routes.",
@@ -199,7 +210,7 @@ export const rules = [
   },
   {
     name: "zod-in-presentation",
-    description: "Only the presentation imports zod. zod checks the data that comes from HTTP; the other layers get typed values.",
+    description: "Only the presentation (the controllers of the use cases, and the presentation of the frontend) imports zod. zod checks the data that comes from HTTP; the other layers get typed values.",
     on: "import",
     check: ({ from, specifier }) => isPackage(specifier, "zod") && (isCore(from) || (from.kind === "layer" && from.layer !== "presentation"))
       && "zod stays at the transport boundary (presentation)"
@@ -213,9 +224,9 @@ export const rules = [
   },
   {
     name: "dtos-sent-by-store",
-    description: "In the frontend, only the store and the application import the input DTOs. A view publishes events; the store turns them into DTOs and sends them to the message bus.",
+    description: "In the frontend, only the store and the application (the use cases and the events) import the input DTOs. A view publishes events; the store turns them into DTOs and sends them to the message bus.",
     on: "import",
-    check: ({ file, target }) => /^src\/frontend\/[^/]+\/application\/.+\.dto\.(js|ts)$/.test(target) && !/^src\/frontend\/[^/]+\/(presentation\/store|application)\//.test(file.path)
+    check: ({ file, target }) => /^src\/frontend\/[^/]+\/(command|query)\/.+\.dto\.(js|ts)$/.test(target) && !/^src\/frontend\/[^/]+\/(presentation\/store|command|query|event)\//.test(file.path)
       && "in the frontend, only the store sends input DTOs to the message bus: a view publishes events, and the store turns them into DTOs"
   },
   {
@@ -333,11 +344,16 @@ export const rules = [
   },
   {
     name: "context-content",
-    description: "A context holds only its four layers (domain, application, infra, presentation), its di.ts and its test.di.ts (and its package.json, which gives the shortcut #context), and its context map, context-map.ts and its test: the events of the context shared that it hears, and the events of its own that it shares.",
+    description: "A context holds its domain, its infra, and its use cases in command/ and query/: a use case holds its controllers. A context of the frontend holds its events too, in event/, and its presentation, in presentation/: its views, its components and its store serve several use cases. A context holds also its di.ts and its test.di.ts (and its package.json, which gives the shortcut #context), and its context map, context-map.ts and its test: the events of the context shared that it hears, and the events of its own that it shares.",
     on: "file",
-    check: ({ path }) => /^src\/(backend|frontend)\/[^/]+\//.test(path)
-      && !/^src\/(backend|frontend)\/[^/]+\/((domain|application|infra|presentation)\/|(di|test\.di|context-map(\.test)?)\.ts$)/.test(path)
-      && "a context holds only domain, application, infra and presentation, with its di.ts, its test.di.ts and its context-map.ts"
+    folders: { backend: ["domain", "infra", "command", "query"], frontend: ["domain", "infra", "command", "query", "event", "presentation"] },
+    /** @this {{ folders: Record<string, string[]> }} */
+    check({ path }) {
+      const [, side, inside] = /^src\/(backend|frontend)\/[^/]+\/(.+)$/.exec(path) ?? [];
+      const folders = side && this.folders[side];
+      return folders && !folders.some(folder => inside.startsWith(`${folder}/`)) && !/^(di|test\.di|context-map(\.test)?)\.ts$/.test(inside)
+        && `a context of the ${side} holds only ${folders.slice(0, -1).join(", ")} and ${folders[folders.length - 1]}, with its di.ts, its test.di.ts and its context-map.ts`;
+    }
   },
   {
     name: "context-map-translates-shared",
@@ -347,8 +363,8 @@ export const rules = [
       const [, side, context] = /^src\/(backend|frontend)\/([^/]+)\/context-map\.ts$/.exec(file.path) ?? [];
       if (!side || to.kind !== "layer" || to.side !== side || (to.context !== context && to.context !== "shared")) return;
       const reads = side === "backend"
-        ? to.layer === "domain" || (to.context === context && /\/application\/(command|query)\/[^/]+\/[^/]+\.dto\.(js|ts)$/.test(target))
-        : to.layer === "domain" || /\/application\/event\//.test(target);
+        ? to.layer === "domain" || (to.context === context && /^src\/backend\/[^/]+\/(command|query)\/[^/]+\/[^/.]+\.dto\.(js|ts)$/.test(target))
+        : to.layer === "domain" || /^src\/frontend\/[^/]+\/event\//.test(target);
       return !reads && (side === "backend"
         ? "a context map translates between the events of shared and those of its context, which it turns into its inputs: it imports only events, the input DTOs of its context, and the values of the domain"
         : "a context map translates between the events of shared and those of its context: it imports only events, and the values of the domain");
@@ -380,19 +396,20 @@ export const rules = [
     check(file, { root }) {
       const [, side, context] = /^src\/(backend|frontend)\/([^/]+)\/context-map\.ts$/.exec(file.path) ?? [];
       if (!side) return;
-      const events = side === "backend" ? "domain/event" : "application/event";
+      const events = side === "backend" ? "domain/event" : "event";
       const own = `src/${side}/${context}/${events}/`;
       const shared = `src/${side}/shared/${events}/`;
-      const reacts = side === "backend" ? `src/backend/${context}/application/` : own;
+      /** What the context reacts to: the input DTOs of its use cases in the backend, its events in the frontend. @type {(module: string) => boolean} */
+      const reacts = module => side === "backend" ? [`src/backend/${context}/command/`, `src/backend/${context}/query/`].some(folder => module.startsWith(folder)) : module.startsWith(own);
       /** @type {(module: string) => boolean} */
-      const isMessage = module => /\/(domain|application)\/event\/|\/application\/(command|query)\//.test(module);
+      const isMessage = module => /^src\/(backend|frontend)\/[^/]+\/(domain\/event|event|command|query)\//.test(module);
       return linesOf(file, root).flatMap(({ shares, event, gives }) => {
         const wrongStart = event && !event.module.startsWith(shares ? own : shared)
           ? [shares
             ? `share(${event.name}, …) starts from an event of its context, which ${side === "backend" ? "a handler" : "a view"} publishes: ${event.name} ${event.module.startsWith(shared) ? "is an event of shared, which when(…) hears" : "is not one"}`
             : `when(${event.name}, …) starts from an event of shared, which comes on the shared bus: ${event.name} ${event.module.startsWith(own) ? "is an event of its context, which share(…) shares" : "is not one"}`]
           : [];
-        const wrongGives = gives.filter(({ module }) => isMessage(module) && !module.startsWith(shares ? shared : reacts))
+        const wrongGives = gives.filter(({ module }) => isMessage(module) && !(shares ? module.startsWith(shared) : reacts(module)))
           .map(({ name }) => shares ? `share(…) gives events of shared: ${name} is not one` : `when(…) gives ${side === "backend" ? "input DTOs" : "events"} of its context: ${name} is not one`);
         return [...wrongStart, ...wrongGives];
       });
@@ -412,7 +429,7 @@ export const rules = [
         for (const { event, gives } of linesOf(file, root)) {
           if (!event) continue;
           // An event goes from shared to the context, or from the context to shared: a line that goes otherwise never starts.
-          for (const { module } of gives.filter(given => /\/application\/event\//.test(given.module) && isShared(given.module) !== isShared(event.module))) {
+          for (const { module } of gives.filter(given => /^src\/frontend\/[^/]+\/event\//.test(given.module) && isShared(given.module) !== isShared(event.module))) {
             edges.set(event.module, [...edges.get(event.module) ?? [], { to: module, map: file.path }]);
           }
         }
@@ -437,12 +454,12 @@ export const rules = [
   },
   {
     name: "shared-events-in-map",
-    description: "A context talks to the other contexts only through its context map: a handler (in the frontend, also a view or a component) publishes an event of its context, the map shares it as an event of shared on the shared bus, and the map of each context that hears it turns it into what its context reacts to. Thus, in a context other than shared, only the context map imports the events of shared: those of the backend, in domain/event/, and those of the frontend, in application/event/.",
+    description: "A context talks to the other contexts only through its context map: a handler (in the frontend, also a view or a component) publishes an event of its context, the map shares it as an event of shared on the shared bus, and the map of each context that hears it turns it into what its context reacts to. Thus, in a context other than shared, only the context map imports the events of shared: those of the backend, in domain/event/, and those of the frontend, in event/.",
     on: "import",
     // The layers that could import them, but the context map; layer-direction refuses the others already.
     events: {
       backend: { folder: /^src\/backend\/shared\/domain\/event\//, layers: ["domain", "application", "infra", "presentation", "di"], publisher: "a handler" },
-      frontend: { folder: /^src\/frontend\/shared\/application\/event\//, layers: ["application", "infra", "presentation"], publisher: "a view" }
+      frontend: { folder: /^src\/frontend\/shared\/event\//, layers: ["application", "infra", "presentation"], publisher: "a view" }
     },
     /** @this {{ events: Record<string, { folder: RegExp; layers: string[]; publisher: string }> }} */
     check({ from, target }) {
@@ -516,7 +533,7 @@ export const rules = [
   },
   {
     name: "layer-direction",
-    description: "In a context, and from a context to shared, each layer imports only the layers that it may use. The domain imports the domain; the application adds the domain; the presentation adds the application; the infra imports the domain (and the application in the frontend); the di.ts imports the domain and the infra; the context map imports the application and the domain. No layer imports the context map: the kernel reads it.",
+    description: "In a context, and from a context to shared, each layer imports only the layers that it may use. The domain imports the domain; the application (the handlers and the DTOs of the use cases, and the events of the frontend) adds the domain; the presentation (the controllers of the use cases, and the presentation/ of the frontend) adds the application; the infra imports the domain (and the application in the frontend); the di.ts imports the domain and the infra; the context map imports the application and the domain. No layer imports the context map: the kernel reads it.",
     on: "import",
     allowed: {
       backend: { domain: ["domain"], application: ["application", "domain"], presentation: ["presentation", "application", "domain"], infra: ["infra", "domain"], di: ["domain", "infra"], map: ["application", "domain"] },

@@ -1,5 +1,5 @@
 import type { Frontend } from "@ingenioz-it/caits/state/request";
-import type { GreetingsEvent } from "../application/event/GreetingsEvent.js";
+import type { GreetingsEvent } from "../event/GreetingsEvent.js";
 import type { GreetingsState } from "./store/greetingsStore.js";
 
 export type GreetingsFrontend = Frontend<GreetingsState, GreetingsEvent>;

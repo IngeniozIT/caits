@@ -28,7 +28,7 @@ const readJson = file => JSON.parse(readFileSync(file, "utf8"));
 
 /** @type {Record<string, number>} */
 const PROJECTS = { "End-to-end": 0, Backend: 1, Frontend: 2, Other: 3 };
-const LAYERS = ["presentation", "application", "domain", "infra"];
+const LAYERS = ["presentation", "command", "query", "event", "domain", "infra"];
 
 /** A path relative to the project root, with "/" on every system. @type {(file: string) => string} */
 export const fromProjectRoot = file => relative(projectRoot, file).split(sep).join("/");
