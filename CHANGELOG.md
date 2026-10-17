@@ -2,7 +2,7 @@
 
 The changes of each version of CAITS, the newest first. A version is a git tag, and a version of the package `@ingenioz-it/caits` on npm: `npx @ingenioz-it/caits@<version> init my-app`.
 
-## Unreleased
+## 0.6.0
 
 ### Architecture
 
