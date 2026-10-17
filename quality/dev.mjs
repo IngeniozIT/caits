@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import adapter from "@marko/run/adapter";
 import { loadConfigFromFile } from "vite";
+import { painterOf } from "./terminal.mjs";
 
 export const VITE_CONFIG = "quality/vite.config.ts";
 export const OUT_DIR = "node_modules/.caits/dev";
@@ -78,7 +79,7 @@ export async function run(args) {
         await restartOnce();
       } while (changedAgain);
     })().catch(error => {
-      console.error(`\nThe development server stopped: ${error instanceof Error ? error.message : error}\nCorrect the error, then start the server again: npm run dev`);
+      console.error(`\n${painterOf(process.stderr)("red", `The development server stopped: ${String(error instanceof Error ? error.message : error)}\nCorrect the error, then start the server again: npm run dev`)}`);
       process.exit(1);
     }).finally(() => {
       restarting = undefined;
@@ -95,7 +96,7 @@ async function configurationLoads() {
     await loadConfigFromFile({ command: "serve", mode: "development" }, VITE_CONFIG, process.cwd(), "silent");
     return true;
   } catch (error) {
-    console.error(`\n${VITE_CONFIG} does not load: the server keeps the configuration that it has.\n${error instanceof Error ? error.message : String(error)}`);
+    console.error(`\n${painterOf(process.stderr)("red", `${VITE_CONFIG} does not load: the server keeps the configuration that it has.\n${error instanceof Error ? error.message : String(error)}`)}`);
     return false;
   }
 }

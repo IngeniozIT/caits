@@ -13,20 +13,33 @@ import { dirname, join, posix, relative, resolve } from "node:path";
  *   | { kind: "layer"; side: Side; context: string; layer: string; useCase?: string }} Location
  */
 /** A file of the project: its path from the root of the project, and what the rules read in it. @typedef {Facts & { path: string }} File */
-/** The project: its root, its files, and their paths. @typedef {{ root: string; files: File[]; paths: Set<string> }} Project */
 /**
- * An import of the production code: its file, where the file and its target live, the specifier, and the target (a path from the root of
- * the project when the import is internal, else the specifier).
- * @typedef {{ file: File; from: Location; to: Location; specifier: string; internal: boolean; target: string }} Import
+ * The packages that each layer may import, by the key of its list (see LISTS): a package (`uuid`), a module (`@ingenioz-it/caits/Token`), a
+ * Node API (`node:crypto`), or a folder of modules (`@ingenioz-it/caits/messaging/*`). A layer without a list imports any package.
+ * @typedef {Partial<Record<"domain" | "application" | "presentation" | "infra" | "di" | "contextMap", string[]>>} Packages
  */
-/** What a check gives: nothing, or false, when the rule holds; else a message, or a list of messages. @typedef {string | string[] | false | null | undefined | void} Messages */
+/**
+ * The project: its root, its files, their paths, and the packages that each layer may import (quality/imports.mjs).
+ * @typedef {{ root: string; files: File[]; paths: Set<string>; packages: Packages }} Project
+ */
+/**
+ * An import of the production code: its file, where the file and its target live, the specifier, the target (a path from the root of the
+ * project when the import is internal, else the specifier), and the line of the import.
+ * @typedef {{ file: File; from: Location; to: Location; specifier: string; internal: boolean; target: string; line: number }} Import
+ */
+/** A message, at a line of the file: the rule points at one construct (an import, a class, a call…). @typedef {{ line?: number; message: string }} Located */
+/**
+ * What a check gives: nothing, or false, when the rule holds; else a message, or a list of messages. A message is a text, or a text with
+ * its line. The message of a rule on the imports is at the line of the import, unless it gives another.
+ * @typedef {string | Located | (string | Located)[] | false | null | undefined | void} Messages
+ */
 /**
  * A rule of the architecture: see the rules of CAITS (quality/caits/architecture.mjs). A rule can keep values of its own, which its check
  * reads with `this`: a project can change them.
  * @typedef {{ name: string; description: string; [value: string]: unknown } & (
- *   | { on: "import"; check(link: Import): Messages }
+ *   | { on: "import"; check(link: Import, project: Project): Messages }
  *   | { on: "file"; production?: boolean; check(file: File, project: Project): Messages }
- *   | { on: "project"; check(project: Project): { file: string; message: string }[] }
+ *   | { on: "project"; check(project: Project): { file: string; line?: number; message: string }[] }
  * )} Rule
  */
 
@@ -98,7 +111,7 @@ export function givesSharedTags(root) {
 }
 
 /** The folder of the context that holds a file (src/backend/notes), or undefined. @type {(path: string) => string | undefined} */
-const contextFolderOf = path => /^src\/(backend|frontend)\/[^/]+(?=\/)/.exec(path)?.[0];
+export const contextFolderOf = path => /^src\/(backend|frontend)\/[^/]+(?=\/)/.exec(path)?.[0];
 
 /**
  * An import names a package (the kernel is one), or a file of the project: its target is then the path from the root of the project.
@@ -127,9 +140,9 @@ export const importedModules = (file, root) => file.imports
 
 /** A class that a file names: its name, and its module (the file of the project without its extension, or the specifier of a package). @typedef {{ name: string; module: string }} Named */
 /**
- * A line of a context map: whether it shares (share) or hears (when), the event that starts it, and the classes that it builds, as the
- * file imports them. A name that the file does not import has no module: the line names a class of its own file.
- * @typedef {{ shares: boolean; source: string; event: Named | null; gives: Named[] }} MapLine
+ * A line of a context map: whether it shares (share) or hears (when), the event that starts it, the classes that it builds, as the
+ * file imports them, and its line in the file. A name that the file does not import has no module: the line names a class of its own file.
+ * @typedef {{ shares: boolean; source: string; event: Named | null; gives: Named[]; line: number }} MapLine
  */
 
 /**
@@ -148,11 +161,12 @@ export function linesOf(file, root) {
   };
   return (file.defaultArray ?? [])
     .filter(({ chain }) => chain.length === 1 && (chain[0] === "when" || chain[0] === "share"))
-    .map(({ chain: [call], source, subject, constructed }) => ({
+    .map(({ chain: [call], source, subject, constructed, line }) => ({
       shares: call === "share",
       source,
       event: named(subject),
-      gives: constructed.map(named).filter(/** @returns {given is Named} */ given => given !== null)
+      gives: constructed.map(named).filter(/** @returns {given is Named} */ given => given !== null),
+      line
     }));
 }
 
@@ -189,7 +203,24 @@ export function adapterOf(path) {
 }
 
 /** The contexts whose frontend a file takes: `frontendOf($global, "notes")` takes the frontend of notes. @type {(file: File) => string[]} */
-export const frontendsOf = file => file.calls.flatMap(({ name, args: [, context] }) => name === "frontendOf" && typeof context === "string" ? [context] : []);
+export const frontendsOf = file => frontendCallsOf(file).map(({ context }) => context);
+/** Each call of a file that takes a frontend: its context, and its line. @type {(file: File) => { context: string; line: number }[]} */
+export const frontendCallsOf = file => file.calls.flatMap(({ name, args: [, context], line }) => name === "frontendOf" && typeof context === "string" ? [{ context, line }] : []);
+
+/**
+ * The key of the list of each layer in quality/imports.mjs. The layers of a context have one each; the routes and the files out of the
+ * contexts have none.
+ * @type {Record<string, keyof Packages>}
+ */
+export const LISTS = { domain: "domain", application: "application", presentation: "presentation", infra: "infra", di: "di", map: "contextMap" };
+
+/**
+ * Whether a list of quality/imports.mjs holds an import of a package: the package, the module or the Node API itself, or a folder of
+ * modules that holds it (`@ingenioz-it/caits/messaging/*` holds `@ingenioz-it/caits/messaging/Input`).
+ * @param {string} specifier
+ * @param {string[]} list
+ */
+export const isListed = (specifier, list) => list.some(entry => entry.endsWith("/*") ? specifier.startsWith(entry.slice(0, -1)) : specifier === entry);
 
 /** @type {(name: string) => string} */
 export const kebab = name => name.replace(/(?<!^)([A-Z])/g, "-$1").toLowerCase();

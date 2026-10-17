@@ -1,6 +1,9 @@
 // `caits mutation-summary`: the mutation score of each file, from the report of Stryker. With --survivors, the mutants that survived.
+// In a terminal: the score in green when every mutant is killed, else in red; the score of each file the same way, and its path in cyan;
+// for each survivor, its line dim, its status in red, its mutator in yellow.
 import { existsSync, readFileSync } from "node:fs";
 import { NOT_RUN } from "./mutation-suite.mjs";
+import { painterOf } from "./terminal.mjs";
 
 /** The report that Stryker writes in JSON (quality/caits/stryker.mjs). */
 export const REPORT = "reports/mutation/mutation.json";
@@ -38,14 +41,18 @@ export function run(args) {
   }
   rows.sort((a, b) => a.score - b.score);
   const verbose = args.includes("--survivors");
-  console.log(`Mutation score: ${(validTotal ? (100 * killedTotal) / validTotal : 100).toFixed(1)}%  (${killedTotal} killed of ${validTotal} valid mutants)\n`);
+  const paint = painterOf(process.stdout);
+  /** @type {(killed: number, valid: number) => "green" | "red"} */
+  const colorOf = (killed, valid) => killed === valid ? "green" : "red";
+  console.log(`${paint([colorOf(killedTotal, validTotal), "bold"], `Mutation score: ${(validTotal ? (100 * killedTotal) / validTotal : 100).toFixed(1)}%  (${killedTotal} killed of ${validTotal} valid mutants)`)}\n`);
   for (const row of rows) {
-    console.log(`${row.score.toFixed(0).padStart(4)}%  ${row.file}  (killed ${row.killed}, survived ${row.survived}, no coverage ${row.noCoverage}${row.untested ? `, not tested ${row.untested}` : ""})`);
+    const valid = row.killed + row.survived + row.noCoverage + row.untested;
+    console.log(`${paint(colorOf(row.killed, valid), `${row.score.toFixed(0).padStart(4)}%`)}  ${paint("cyan", row.file)}  (killed ${row.killed}, survived ${row.survived}, no coverage ${row.noCoverage}${row.untested ? `, not tested ${row.untested}` : ""})`);
     if (verbose && row.survivors.length) {
-      for (const m of row.survivors) console.log(`        L${m.location.start.line} ${tag(m)} ${m.mutatorName}: ${(row.source[m.location.start.line - 1] ?? "").trim().slice(0, 90)}  →  ${String(m.replacement ?? "").slice(0, 60)}`);
+      for (const m of row.survivors) console.log(`        ${paint("dim", `L${m.location.start.line}`)} ${paint("red", tag(m))} ${paint("yellow", m.mutatorName)}: ${(row.source[m.location.start.line - 1] ?? "").trim().slice(0, 90)}  ${paint("dim", "→")}  ${String(m.replacement ?? "").slice(0, 60)}`);
     }
   }
   if (!notTestedTotal) return 0;
-  console.log(`\n${notTestedTotal} ${notTestedTotal === 1 ? "mutant is" : "mutants are"} not tested: the unit tests did not run, and Stryker counts ${notTestedTotal === 1 ? "it" : "them"} as killed. Run the mutation tests again. Why they did not run: reports/mutation/index.html.`);
+  console.log(`\n${paint("red", `${notTestedTotal} ${notTestedTotal === 1 ? "mutant is" : "mutants are"} not tested: the unit tests did not run, and Stryker counts ${notTestedTotal === 1 ? "it" : "them"} as killed. Run the mutation tests again. Why they did not run: reports/mutation/index.html.`)}`);
   return 1;
 }

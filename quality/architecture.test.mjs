@@ -4,6 +4,9 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
 import { checkArchitecture } from "./architecture.mjs";
 import { rules } from "../template/caits/architecture.mjs";
+import { allowed } from "../template/caits/imports.mjs";
+
+/** @import { Packages, Rule } from "./architecture.mjs" */
 
 /** A component of the frontend context shared: a Marko tag, which the contexts place by its name. */
 const BADGE = `import type { Label } from "#context/domain/value-object/Label.js";
@@ -197,16 +200,32 @@ import { LabelChosen } from "#frontend-shared/event/LabelChosen.js";
 import { NoteLabelChosen } from "#context/event/NoteLabelChosen.js";
 import { NotesRequested } from "#context/event/NotesRequested.js";
 `;
+const BACKEND_MAP_IMPORTS = `import { share, when } from "@ingenioz-it/caits/messaging/ContextMap";
+import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";
+import { NoteAdded } from "#context/domain/event/NoteAdded.js";
+import { NotePosted } from "#shared/domain/event/NotePosted.js";
+import { UserJoined } from "#shared/domain/event/UserJoined.js";
+`;
 
-/** The violations of the project with these files added or changed, as [rule, file]. */
-const violationsWith = (files = {}) => checkArchitecture(ROOT, Object.entries({ ...project, ...files }).map(([path, text]) => ({ path, text })), rules)
-  .violations.map(({ rule, file }) => [rule, file]);
+/**
+ * The violations of the project with these files added or changed, with the packages of CAITS (quality/caits/imports.mjs) or others.
+ * @param {Partial<Record<string, string>>} [files]
+ * @param {Packages} [packages]
+ */
+const checkWith = (files = {}, packages = allowed) => checkArchitecture(ROOT, Object.entries(/** @type {Record<string, string>} */ ({ ...project, ...files })).map(([path, text]) => ({ path, text })), rules, packages).violations;
+/** The violations of the project with these files added or changed, as [rule, file]. @type {(files?: Partial<Record<string, string>>, packages?: Packages) => string[][]} */
+const violationsWith = (files, packages) => checkWith(files, packages).map(({ rule, file }) => [rule, file]);
+/** The rule and the message of each violation of the project with these files. @type {(files?: Partial<Record<string, string>>) => string[][]} */
+const messagesWith = files => checkWith(files).map(({ rule, message }) => [rule, message]);
 
 const handler = "src/backend/notes/command/add-note/add-note.handler.ts";
 const entity = "src/backend/notes/domain/entity/Note.ts";
 const store = "src/frontend/notes/presentation/store/notesStore.ts";
 const contextMap = "src/backend/notes/context-map.ts";
 const backendRoute = "src/routes/_backend/api/notes/+handler.ts";
+const controller = "src/backend/notes/command/add-note/add-note.http.controller.ts";
+const backendAdapter = "src/backend/notes/infra/note-repository/in-memory-note-repository.ts";
+const frontendAdapter = "src/frontend/notes/infra/notes-gateway/http-notes-gateway.ts";
 
 /**
  * For each rule: what breaks it, and the files that do so. The project then breaks this rule in the first of these files, and no other
@@ -242,8 +261,31 @@ const cases = [
       "src/backend/notes/domain/port/clock/Clock.ts": "export interface Clock { now(): Date }\n"
     }
   },
-  { rule: "core-without-node", breaks: "an entity imports Node", files: { [entity]: 'import { randomUUID } from "node:crypto";\n\nexport class Note { readonly id = randomUUID(); }\n' } },
-  { rule: "domain-uses-kernel-primitives", breaks: "an entity imports a bus of the kernel", files: { [entity]: 'import { FrontendEventBus } from "@ingenioz-it/caits/messaging/FrontendEventBus";\n\nexport class Note { bus?: FrontendEventBus; }\n' } },
+  { rule: "domain-imports-only-listed-packages", breaks: "an entity imports a package that the domain does not list", files: { [entity]: 'import { v4 } from "uuid";\n\nexport class Note { readonly id = v4(); }\n' } },
+  {
+    rule: "application-imports-only-listed-packages", breaks: "a handler imports a Node API that the application does not list",
+    files: { [handler]: 'import { randomUUID } from "node:crypto";\n\nexport class AddNoteHandler { execute() { randomUUID(); return new AddNoteOutput(); } }\n' }
+  },
+  {
+    rule: "presentation-imports-only-listed-packages", breaks: "a controller imports a package that the list of the presentation does not hold",
+    packages: { ...allowed, presentation: ["@ingenioz-it/caits/*"] },
+    files: { [controller]: `import { format } from "date-fns";\n${project[controller]}` }
+  },
+  {
+    rule: "infra-imports-only-listed-packages", breaks: "an adapter imports a Node API that the list of the infra does not hold",
+    packages: { ...allowed, infra: [] },
+    files: { "src/backend/notes/infra/note-repository/in-memory-note-repository.ts": `import "node:fs";\n${project["src/backend/notes/infra/note-repository/in-memory-note-repository.ts"]}` }
+  },
+  {
+    rule: "di-imports-only-listed-packages", breaks: "a di.ts imports a package that the list of di.ts does not hold",
+    packages: { ...allowed, di: ["@ingenioz-it/caits/di/Container"] },
+    files: { "src/backend/notes/di.ts": `import "node:path";\n${project["src/backend/notes/di.ts"]}` }
+  },
+  {
+    rule: "context-map-imports-only-listed-packages", breaks: "a context map imports a package that the list of the context maps does not hold",
+    packages: { ...allowed, contextMap: ["@ingenioz-it/caits/messaging/ContextMap", "@ingenioz-it/caits/messaging/FrontendContextMap"] },
+    files: { [contextMap]: `import "lodash";\n${project[contextMap]}` }
+  },
   { rule: "entity-without-port", breaks: "an entity imports a port", files: { [entity]: 'import type { NoteRepository } from "#context/domain/port/note-repository/NoteRepository.js";\n\nexport class Note { repository?: NoteRepository; }\n' } },
 
   { rule: "backend-use-case-shape", breaks: "a use case holds a helper", files: { "src/backend/notes/command/add-note/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
@@ -262,8 +304,8 @@ const cases = [
   { rule: "event-type-names-context", breaks: "the type of an event is not its name", files: { "src/frontend/notes/event/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.load" as const; }\n' } },
 
   { rule: "frontend-presentation-shape", breaks: "the presentation holds a helper out of a view", files: { "src/frontend/notes/presentation/helpers.ts": "export const trim = (text: string) => text.trim();\n" } },
-  { rule: "zod-in-presentation", breaks: "an entity imports zod", files: { [entity]: 'import { z } from "zod";\n\nexport class Note { static readonly schema = z.string(); }\n' } },
-  { rule: "marko-in-frontend-presentation", breaks: "a handler imports Marko", files: { [handler]: 'import "marko";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
+  { rule: "zod-in-presentation", breaks: "an adapter of the backend imports zod", files: { [backendAdapter]: `import { z } from "zod";\n${project[backendAdapter]}` } },
+  { rule: "marko-in-frontend-presentation", breaks: "an adapter of the frontend imports Marko", files: { [frontendAdapter]: `import "marko";\n${project[frontendAdapter]}` } },
   {
     rule: "dtos-sent-by-store", breaks: "a file of a view imports an input DTO",
     files: { "src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts": 'import { ListNotesQuery } from "#context/query/list-notes/list-notes.dto.js";\n\nexport const query = () => new ListNotesQuery();\n' }
@@ -331,7 +373,23 @@ const cases = [
   { rule: "contexts-isolated", breaks: "a context imports another context", files: { [handler]: 'import "#backend/alerts/domain/event/AlertRaised.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
   { rule: "tests-in-one-context", breaks: "the test of a use case imports another context", files: { "src/backend/notes/command/add-note/add-note.application.test.ts": 'import { RaiseCommand } from "#backend/alerts/command/raise/raise.dto.js";\n\ntest(() => new RaiseCommand());\n' } },
   { rule: "sides-apart", breaks: "the frontend imports the backend", files: { [store]: 'import { AddNoteCommand } from "#backend/notes/command/add-note/add-note.dto.js";\n\nexport default { send: () => new AddNoteCommand() };\n' } },
-  { rule: "layer-direction", breaks: "the domain imports the application", files: { [entity]: 'import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";\n\nexport class Note { command?: AddNoteCommand; }\n' } },
+  { rule: "domain-imports-no-application", breaks: "the domain imports an input DTO", files: { [entity]: 'import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";\n\nexport class Note { command?: AddNoteCommand; }\n' } },
+  { rule: "domain-imports-no-presentation", breaks: "the domain imports a controller", files: { [entity]: 'import "#context/command/add-note/add-note.http.controller.js";\n\nexport class Note {}\n' } },
+  { rule: "domain-imports-no-infra", breaks: "the domain imports an adapter", files: { [entity]: 'import "#context/infra/note-repository/in-memory-note-repository.js";\n\nexport class Note {}\n' } },
+  { rule: "application-imports-no-presentation", breaks: "a handler imports its controller", files: { [handler]: 'import "./add-note.http.controller.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
+  { rule: "application-imports-no-infra", breaks: "a handler imports an adapter", files: { [handler]: 'import "#context/infra/note-repository/in-memory-note-repository.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
+  { rule: "presentation-imports-no-infra", breaks: "a controller imports an adapter", files: { [controller]: `import "#context/infra/note-repository/in-memory-note-repository.js";\n${project[controller]}` } },
+  {
+    rule: "infra-imports-no-presentation", breaks: "an adapter of the frontend imports a view",
+    files: { "src/frontend/notes/infra/notes-gateway/http-notes-gateway.ts": `import "#context/presentation/view/notes-block/NotesBlock.marko";\n${project["src/frontend/notes/infra/notes-gateway/http-notes-gateway.ts"]}` }
+  },
+  {
+    rule: "infra-imports-no-application", breaks: "an adapter of the backend imports an input DTO",
+    files: { "src/backend/notes/infra/note-repository/in-memory-note-repository.ts": `import "#context/command/add-note/add-note.dto.js";\n${project["src/backend/notes/infra/note-repository/in-memory-note-repository.ts"]}` }
+  },
+  { rule: "di-imports-no-application", breaks: "a di.ts imports a handler", files: { "src/backend/notes/di.ts": `import "./command/add-note/add-note.handler.js";\n${project["src/backend/notes/di.ts"]}` } },
+  { rule: "di-imports-no-presentation", breaks: "a di.ts imports a controller", files: { "src/backend/notes/di.ts": `import "./command/add-note/add-note.http.controller.js";\n${project["src/backend/notes/di.ts"]}` } },
+  { rule: "context-map-read-by-kernel", breaks: "a view imports the context map", files: { "src/frontend/notes/presentation/view/notes-count/NotesCount.marko": 'import "#context/context-map.js";\n\n<p>Notes</p>\n' } },
   { rule: "contexts-without-routes", breaks: "a handler imports a route", files: { [handler]: 'import "/src/routes/_backend/api/notes/+handler.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
 
   { rule: "routes-folders", breaks: "a route is out of _frontend and _backend", files: { "src/routes/api/+handler.ts": "export const GET = () => null;\n" } },
@@ -344,31 +402,915 @@ const cases = [
   { rule: "routes-through-presentation", breaks: "a route imports an input DTO", files: { [backendRoute]: 'import "#backend/notes/command/add-note/add-note.dto.js";\n' } },
   { rule: "routes-take-no-frontend", breaks: "a page takes a frontend", files: { "src/routes/_frontend/+page.marko": '<button onClick() { frontendOf($global, "notes"); }>Charger</button>\n' } },
 
-  { rule: "no-test-environment", breaks: "a handler imports a test.di.ts", files: { [handler]: 'import "#context/test.di.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
+  { rule: "production-imports-no-test-environment", breaks: "a handler imports a test.di.ts", files: { [handler]: 'import "#context/test.di.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' } },
   {
-    rule: "no-test-support", breaks: "a handler imports the test support of the kernel",
-    files: { [handler]: 'import "@ingenioz-it/caits/testing/backend/application";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }
+    rule: "production-imports-no-test-support", breaks: "an adapter imports the test support of the kernel",
+    files: { [backendAdapter]: `import "@ingenioz-it/caits/testing/backend/infra";\n${project[backendAdapter]}` }
   },
   {
-    rule: "nothing-outside-src", breaks: "a handler imports a file of test/",
-    files: { [handler]: 'import "../../../../../../test/support/notes.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' },
-    expected: [["imports-by-shortcut", handler], ["nothing-outside-src", handler]]
+    rule: "production-imports-only-src", breaks: "a handler imports a file of test/",
+    files: { [handler]: 'import "../../../../../test/support/notes.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' },
+    expected: [["imports-by-shortcut", handler], ["production-imports-only-src", handler]]
   },
 
   { rule: "exceptions-in-quality", breaks: "a comment turns off a rule of ESLint", files: { [handler]: "// eslint-disable-next-line @typescript-eslint/no-explicit-any\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n" } }
 ];
+
 
 describe("the architecture rules", () => {
   test("a small project of each kind of file breaks no rule", () => {
     expect(violationsWith()).toEqual([]);
   });
 
-  test.for(cases)("$rule: $breaks", ({ rule, files, expected = [[rule, Object.keys(files)[0]]] }) => {
-    expect(violationsWith(files)).toEqual(expected);
+  test.for(cases)("$rule: $breaks", ({ rule, files, packages, expected = [[rule, Object.keys(files)[0]]] }) => {
+    expect(violationsWith(files, packages)).toEqual(expected);
   });
 
   test("each rule has a case that breaks it", () => {
     expect(cases.map(({ rule }) => rule)).toEqual(rules.map(({ name }) => name));
+  });
+});
+
+/**
+ * Each message of each rule, one per branch: the rule, the branch, the files that take it, and what the rule says, as [file, line, message].
+ * The line is undefined when the rule points at no construct. The packages are those of CAITS, unless the branch gives others.
+ */
+const messages = [
+  { rule: "container-built-by-kernel", branch: "in a context", files: { [handler]: "export class AddNoteHandler {\n  container = new Container();\n  execute() { return new AddNoteOutput(); }\n}\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 2, "This file builds a Container, but only the kernel builds the containers, from the di.ts of each context. Remove `new Container(…)`, and bind what it holds in src/backend/notes/di.ts."]
+    ] },
+  { rule: "container-built-by-kernel", branch: "out of a context", files: { [backendRoute]: `${project[backendRoute]}export const container = new Container();\n` }, expected: [
+      ["src/routes/_backend/api/notes/+handler.ts", 5, "This file builds a Container, but only the kernel builds the containers, from the di.ts of each context. Remove `new Container(…)`, and bind what it holds in the di.ts of the context that uses it."]
+    ] },
+  { rule: "controllers-built-by-kernel", branch: "in a route", files: { [backendRoute]: "export const POST = () => new AddNoteHttpController();\n" }, expected: [
+      ["src/routes/_backend/api/notes/+handler.ts", 1, "This file builds AddNoteHttpController with `new`, but only the kernel builds a controller, with its dependencies. Ask the kernel for it with `controller(AddNoteHttpController)`, from @ingenioz-it/caits/di/backend."]
+    ] },
+  { rule: "controllers-built-by-kernel", branch: "elsewhere", files: { "test/support/notes.ts": "export const make = () => new AddNoteHttpController();\n" }, expected: [
+      ["test/support/notes.ts", 1, "This file builds AddNoteHttpController with `new`, but only the kernel builds a controller, with its dependencies. Send the request through the router instead."]
+    ] },
+
+  { rule: "domain-shape", branch: "at the root of the domain", files: { "src/backend/notes/domain/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/backend/notes/domain/helpers.ts", undefined, "helpers.ts is at the root of the domain, but the domain holds only entity/, value-object/, error/, event/ and port/. Move its code into an entity or a value object, or move the file to the folder of its kind."]
+    ] },
+  { rule: "domain-shape", branch: "in an unknown folder", files: { "src/backend/notes/domain/service/Notes.ts": "export class Notes {}\n" }, expected: [
+      ["src/backend/notes/domain/service/Notes.ts", undefined, "Notes.ts is in domain/service/, but the domain holds only entity/, value-object/, error/, event/ and port/. Move its code into an entity or a value object, or move the file to the folder of its kind."]
+    ] },
+  { rule: "domain-shape", branch: "a port without its folder", files: { "src/backend/notes/domain/port/Clock.ts": "export interface Clock { now(): Date }\n" }, expected: [
+      ["src/backend/notes/domain/port/Clock.ts", undefined, "Clock.ts is in port/, but a port lives in a folder of its own, port/{port}/{Port}.ts. Move it to src/backend/notes/domain/port/clock/Clock.ts."]
+    ] },
+  { rule: "domain-shape", branch: "a test of an error", files: { "src/backend/notes/domain/error/InvalidNoteError.test.ts": "test();\n" }, expected: [
+      ["src/backend/notes/domain/error/InvalidNoteError.test.ts", undefined, "InvalidNoteError.test.ts is a test in error/, but in the domain only the entities and the value objects have a test. Test it through the application test of a use case."]
+    ] },
+  { rule: "domain-shape", branch: "a test of a port", files: { "src/backend/notes/domain/port/note-repository/NoteRepository.test.ts": "test();\n" }, expected: [
+      ["src/backend/notes/domain/port/note-repository/NoteRepository.test.ts", undefined, "NoteRepository.test.ts is a test in port/, but in the domain only the entities and the value objects have a test. Test it through the application test of a use case, or through the contract of the port."]
+    ] },
+  { rule: "domain-shape", branch: "an error whose name does not end with Error", files: { "src/backend/notes/domain/error/EmptyNote.ts": "export class EmptyNote extends Error {}\n" }, expected: [
+      ["src/backend/notes/domain/error/EmptyNote.ts", undefined, "EmptyNote.ts is in error/, but the name of an error ends with Error: error/{Name}Error.ts. Rename it EmptyNoteError.ts, and its class EmptyNoteError."]
+    ] },
+  { rule: "domain-shape", branch: "an entity whose name is not in PascalCase", files: { "src/backend/notes/domain/entity/note-item.ts": "export class NoteItem {}\n" }, expected: [
+      ["src/backend/notes/domain/entity/note-item.ts", undefined, "note-item.ts is in entity/, but the name of an entity is its class, in PascalCase: entity/{Entity}.ts. Rename it NoteItem.ts."]
+    ] },
+  { rule: "domain-shape", branch: "an entity in a folder of its own", files: { "src/backend/notes/domain/entity/parts/Part.ts": "export class Part {}\n" }, expected: [
+      ["src/backend/notes/domain/entity/parts/Part.ts", undefined, "Part.ts is in entity/parts/, but its place is entity/. Move it to src/backend/notes/domain/entity/Part.ts."]
+    ] },
+  { rule: "domain-shape", branch: "a port whose name is not the name of its folder", files: { "src/backend/notes/domain/port/note-repository/repository.ts": "export interface Repository {}\n" }, expected: [
+      ["src/backend/notes/domain/port/note-repository/repository.ts", undefined, "repository.ts is in port/note-repository/, but a port is port/{port}/{Port}.ts, beside its contract {Port}.contract.ts. Rename it NoteRepository.ts."]
+    ] },
+  { rule: "domain-file-exports-one-name", branch: "several names", files: { [entity]: "export class Note {}\nexport const MAX_LENGTH = 280;\n" }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 2, "Note.ts exports 2 names (Note, MAX_LENGTH), but a domain file exports one name, Note. Move MAX_LENGTH into Note as a static member, or to a file of its own."]
+    ] },
+  {
+    rule: "domain-file-exports-one-name", branch: "a port, which shares its name with its token",
+    files: { "src/backend/notes/domain/port/note-repository/NoteRepository.ts": `${project["src/backend/notes/domain/port/note-repository/NoteRepository.ts"]}export const LIMIT = 3;\n` }, expected: [
+      ["src/backend/notes/domain/port/note-repository/NoteRepository.ts", 7, "NoteRepository.ts exports 2 names (NoteRepository, LIMIT), but a domain file exports one name, NoteRepository, which the port and its token share. Move LIMIT into NoteRepository as a static member, or to a file of its own."]
+    ]
+  },
+  { rule: "domain-file-exports-one-name", branch: "an export without a name", files: { [entity]: "export default class Note {}\n" }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "Note.ts has an export without a name (export default), but a domain file exports one name, Note. Export it as Note."]
+    ] },
+  { rule: "domain-file-exports-one-name", branch: "a name of a list", files: { [entity]: "class Note {}\nexport { Note };\n" }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 2, "Note.ts exports Note from a list, `export { … }`, but a domain file exports its one name where it declares it. Write `export` before the declaration of Note."]
+    ] },
+  { rule: "domain-file-exports-one-name", branch: "no export", files: { [entity]: "class Note {}\n" }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", undefined, "Note.ts exports nothing, but a domain file exports one name, Note. Export Note."]
+    ] },
+  { rule: "entity-is-class", branch: "exported as something else", files: { "src/backend/notes/domain/value-object/Text.ts": "export type Text = string;\n" }, expected: [
+      ["src/backend/notes/domain/value-object/Text.ts", 1, "Text.ts exports Text as a type, but a value object is an exported class, which holds the business rules of its values. Write `export class Text`, and put the rules of its values in it."]
+    ] },
+  { rule: "entity-is-class", branch: "no exported class", files: { [entity]: "export const note = 1;\n" }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", undefined, "Note.ts exports no class, but an entity is an exported class, which holds the business rules of its values. Write `export class Note`, and put the rules of its values in it."]
+    ] },
+  { rule: "error-extends-error", branch: "a class that extends nothing", files: { "src/backend/notes/domain/error/EmptyNoteError.ts": "export class EmptyNoteError {}\n" }, expected: [
+      ["src/backend/notes/domain/error/EmptyNoteError.ts", 1, "EmptyNoteError extends nothing, but a domain error is an exported class that extends Error. Write `export class EmptyNoteError extends Error`."]
+    ] },
+  { rule: "error-extends-error", branch: "a class that is not exported", files: { "src/backend/notes/domain/error/EmptyNoteError.ts": "class EmptyNoteError extends Error {}\n" }, expected: [
+      ["src/backend/notes/domain/error/EmptyNoteError.ts", 1, "EmptyNoteError is not exported, but a domain error is an exported class that extends Error. Write `export class EmptyNoteError extends Error`."]
+    ] },
+  { rule: "error-extends-error", branch: "no class of its name", files: { "src/backend/notes/domain/error/EmptyNoteError.ts": "export class Empty extends Error {}\n" }, expected: [
+      ["src/backend/notes/domain/error/EmptyNoteError.ts", undefined, "EmptyNoteError.ts holds no class EmptyNoteError, only Empty, but a domain error is an exported class named after its file, which extends Error. Write `export class EmptyNoteError extends Error`."]
+    ] },
+  {
+    rule: "port-folder-named-after-port", branch: "a port and its contract, with their adapters",
+    files: {
+      "src/backend/notes/domain/port/time/Clock.ts": "export interface Clock { now(): Date }\n",
+      "src/backend/notes/domain/port/time/Clock.contract.ts": "export function describeClockContract(): void {}\n",
+      "src/backend/notes/infra/time/system-time.test.ts": 'import { describeClockContract } from "#context/domain/port/time/Clock.contract.js";\n'
+    },
+    expected: [
+      ["src/backend/notes/domain/port/time/Clock.ts", undefined, "The port Clock is in port/time/, but the folder of a port is its name in kebab-case, port/clock/. Move it to src/backend/notes/domain/port/clock/Clock.ts, and its adapters from src/backend/notes/infra/time/ to src/backend/notes/infra/clock/."],
+      ["src/backend/notes/domain/port/time/Clock.contract.ts", undefined, "The contract of the port Clock is in port/time/, but the folder of a port is its name in kebab-case, port/clock/. Move it to src/backend/notes/domain/port/clock/Clock.contract.ts, and its adapters from src/backend/notes/infra/time/ to src/backend/notes/infra/clock/."]
+    ]
+  },
+  {
+    rule: "port-folder-named-after-port", branch: "a port without adapters",
+    files: { "src/backend/notes/domain/port/time/Clock.ts": "export interface Clock { now(): Date }\n", "src/backend/notes/domain/port/time/Clock.contract.ts": "export function describeClockContract(): void {}\n" },
+    expected: [
+      ["src/backend/notes/domain/port/time/Clock.ts", undefined, "The port Clock is in port/time/, but the folder of a port is its name in kebab-case, port/clock/. Move it to src/backend/notes/domain/port/clock/Clock.ts."],
+      ["src/backend/notes/domain/port/time/Clock.contract.ts", undefined, "The contract of the port Clock is in port/time/, but the folder of a port is its name in kebab-case, port/clock/. Move it to src/backend/notes/domain/port/clock/Clock.contract.ts."]
+    ]
+  },
+  {
+    rule: "port-has-contract", branch: "a port whose adapters have tests",
+    files: {
+      "src/backend/notes/domain/port/clock/Clock.ts": "export interface Clock { now(): Date }\n",
+      "src/backend/notes/infra/clock/system-clock.ts": "export class SystemClock implements Clock { now() { return new Date(); } }\n",
+      "src/backend/notes/infra/clock/system-clock.test.ts": "test();\n"
+    },
+    expected: [
+      ["src/backend/notes/domain/port/clock/Clock.ts", undefined, "The port Clock has no contract, so nothing says what each of its adapters must do. Write src/backend/notes/domain/port/clock/Clock.contract.ts, and run it in the test of each adapter in src/backend/notes/infra/clock/ (system-clock.test.ts)."]
+    ]
+  },
+  { rule: "port-has-contract", branch: "a port without adapters", files: { "src/backend/notes/domain/port/clock/Clock.ts": "export interface Clock { now(): Date }\n" }, expected: [
+      ["src/backend/notes/domain/port/clock/Clock.ts", undefined, "The port Clock has no contract, so nothing says what each of its adapters must do. Write src/backend/notes/domain/port/clock/Clock.contract.ts, and run it in the test of each adapter in src/backend/notes/infra/clock/."]
+    ] },
+  { rule: "contract-next-to-port", branch: "a port of its name", files: { "test/support/NoteRepository.contract.ts": "export function describeNoteRepositoryContract(): void {}\n" }, expected: [
+      ["test/support/NoteRepository.contract.ts", undefined, "NoteRepository.contract.ts is the contract of NoteRepository, but it is not next to its port. Move it to src/backend/notes/domain/port/note-repository/NoteRepository.contract.ts, beside src/backend/notes/domain/port/note-repository/NoteRepository.ts."]
+    ] },
+  {
+    rule: "contract-next-to-port", branch: "a port of its name in two contexts",
+    files: {
+      "test/support/Clock.contract.ts": "export function describeClockContract(): void {}\n",
+      "src/backend/notes/domain/port/clock/Clock.ts": "export interface Clock { now(): Date }\n",
+      "src/frontend/notes/domain/port/clock/Clock.ts": "export interface Clock { now(): Date }\n"
+    },
+    expected: [
+      ["test/support/Clock.contract.ts", undefined, "Clock.contract.ts is the contract of Clock, but it is not next to its port. Move it next to the port that it describes: src/backend/notes/domain/port/clock/Clock.contract.ts, or src/frontend/notes/domain/port/clock/Clock.contract.ts."]
+    ]
+  },
+  { rule: "contract-next-to-port", branch: "no port of its name", files: { "test/support/Clock.contract.ts": "export function describeClockContract(): void {}\n" }, expected: [
+      ["test/support/Clock.contract.ts", undefined, "Clock.contract.ts is a contract, but no port Clock exists: a contract lives in domain/port/clock/, beside the port that it describes. Write the port Clock in the domain/port/clock/ of its context, and move the contract beside it."]
+    ] },
+  {
+    rule: "contract-runs-in-adapter-test", branch: "adapters with tests",
+    files: {
+      "src/backend/notes/domain/port/clock/Clock.contract.ts": "export function describeClockContract(): void {}\n",
+      "src/backend/notes/domain/port/clock/Clock.ts": "export interface Clock { now(): Date }\n",
+      "src/backend/notes/infra/clock/system-clock.ts": "export class SystemClock implements Clock { now() { return new Date(); } }\n",
+      "src/backend/notes/infra/clock/system-clock.test.ts": "test();\n"
+    },
+    expected: [
+      ["src/backend/notes/domain/port/clock/Clock.contract.ts", undefined, "No test runs the contract of Clock, so it checks nothing. Call describeClockContract in the test of each adapter in src/backend/notes/infra/clock/ (system-clock.test.ts)."]
+    ]
+  },
+  {
+    rule: "contract-runs-in-adapter-test", branch: "adapters without tests",
+    files: {
+      "src/backend/notes/domain/port/clock/Clock.contract.ts": "export function describeClockContract(): void {}\n",
+      "src/backend/notes/domain/port/clock/Clock.ts": "export interface Clock { now(): Date }\n",
+      "src/backend/notes/infra/clock/system-clock.ts": "export class SystemClock implements Clock { now() { return new Date(); } }\n"
+    },
+    expected: [
+      ["src/backend/notes/domain/port/clock/Clock.contract.ts", undefined, "No test runs the contract of Clock, so it checks nothing. Call describeClockContract in the test of each adapter in src/backend/notes/infra/clock/ (system-clock.ts)."]
+    ]
+  },
+  {
+    rule: "contract-runs-in-adapter-test", branch: "no adapter",
+    files: { "src/backend/notes/domain/port/clock/Clock.contract.ts": "export const contract = 1;\n", "src/backend/notes/domain/port/clock/Clock.ts": "export interface Clock { now(): Date }\n" },
+    expected: [
+      ["src/backend/notes/domain/port/clock/Clock.contract.ts", undefined, "No test runs the contract of Clock, so it checks nothing. Write an adapter of Clock in src/backend/notes/infra/clock/, with a test that calls describeClockContract."]
+    ]
+  },
+  { rule: "domain-imports-only-listed-packages", branch: "a package", files: { [entity]: 'import { v4 } from "uuid";\n\nexport class Note { readonly id = v4(); }\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The domain layer imports uuid, a package that quality/imports.mjs does not list for the domain. Declare what it needs as a port in src/backend/notes/domain/port/, and implement it in the infra; or, to use uuid in the domain anyway, add it to the domain in quality/imports.mjs."]
+    ] },
+  { rule: "domain-imports-only-listed-packages", branch: "a Node API", files: { [entity]: 'import { randomUUID } from "node:crypto";\n\nexport class Note { readonly id = randomUUID(); }\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The domain layer imports node:crypto, a Node API that quality/imports.mjs does not list for the domain. Declare what it needs as a port in src/backend/notes/domain/port/, and implement it in the infra; or, to use node:crypto in the domain anyway, add it to the domain in quality/imports.mjs."]
+    ] },
+  { rule: "domain-imports-only-listed-packages", branch: "a bus of the kernel", files: { [entity]: 'import "@ingenioz-it/caits/messaging/FrontendEventBus";\n\nexport class Note {}\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The domain layer imports @ingenioz-it/caits/messaging/FrontendEventBus, a module of the kernel that quality/imports.mjs does not list for the domain. Let a handler publish the events, and keep the domain free of buses."]
+    ] },
+  { rule: "domain-imports-only-listed-packages", branch: "the state of the kernel", files: { [entity]: 'import "@ingenioz-it/caits/state/Loadable";\n\nexport class Note {}\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The domain layer imports @ingenioz-it/caits/state/Loadable, a module of the kernel that quality/imports.mjs does not list for the domain. Keep the state in the store of the presentation, and let the domain give values."]
+    ] },
+  { rule: "domain-imports-only-listed-packages", branch: "the dependency injection of the kernel", files: { [entity]: 'import "@ingenioz-it/caits/di/Container";\n\nexport class Note {}\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The domain layer imports @ingenioz-it/caits/di/Container, a module of the kernel that quality/imports.mjs does not list for the domain. Declare what the domain needs as a port, and let di.ts bind it."]
+    ] },
+  { rule: "domain-imports-only-listed-packages", branch: "another module of the kernel", files: { [entity]: 'import "@ingenioz-it/caits/http/failureOf";\n\nexport class Note {}\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The domain layer imports @ingenioz-it/caits/http/failureOf, a module of the kernel that quality/imports.mjs does not list for the domain. Move the code that needs it out of the domain."]
+    ] },
+  { rule: "domain-imports-only-listed-packages", branch: "a package that the list holds", packages: { ...allowed, domain: [...allowed.domain, "uuid"] }, files: { [entity]: 'import "uuid";\n\nexport class Note {}\n' }, expected: [] },
+  { rule: "domain-imports-only-listed-packages", branch: "a module of a folder that the list holds", packages: { ...allowed, domain: [...allowed.domain, "uuid/*"] }, files: { [entity]: 'import "uuid/v4";\n\nexport class Note {}\n' }, expected: [] },
+  { rule: "domain-imports-only-listed-packages", branch: "without a list", packages: {}, files: { [entity]: 'import "uuid";\n\nexport class Note {}\n' }, expected: [] },
+  { rule: "application-imports-only-listed-packages", branch: "a Node API", files: { [handler]: 'import { randomUUID } from "node:crypto";\n\nexport class AddNoteHandler { execute() { randomUUID(); return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The application layer imports node:crypto, a Node API that quality/imports.mjs does not list for the application. Declare what it needs as a port in src/backend/notes/domain/port/, implement it in the infra, and bind the adapter in src/backend/notes/di.ts; or, to use node:crypto in the application anyway, add it to the application in quality/imports.mjs."]
+    ] },
+  { rule: "application-imports-only-listed-packages", branch: "a package", files: { [handler]: 'import "lodash";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The application layer imports lodash, a package that quality/imports.mjs does not list for the application. Declare what it needs as a port in src/backend/notes/domain/port/, implement it in the infra, and bind the adapter in src/backend/notes/di.ts; or, to use lodash in the application anyway, add it to the application in quality/imports.mjs."]
+    ] },
+  { rule: "application-imports-only-listed-packages", branch: "the state of the kernel", files: { [handler]: 'import "@ingenioz-it/caits/state/Loadable";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The application layer imports @ingenioz-it/caits/state/Loadable, a module of the kernel that quality/imports.mjs does not list for the application. Keep the state in the store of the presentation, and publish an event that the store hears."]
+    ] },
+  { rule: "application-imports-only-listed-packages", branch: "the dependency injection of the kernel", files: { [handler]: 'import "@ingenioz-it/caits/di/Container";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The application layer imports @ingenioz-it/caits/di/Container, a module of the kernel that quality/imports.mjs does not list for the application. Depend on a port of the domain, and let di.ts bind its adapter."]
+    ] },
+  { rule: "application-imports-only-listed-packages", branch: "another module of the kernel", files: { [handler]: 'import "@ingenioz-it/caits/messaging/Controller";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The application layer imports @ingenioz-it/caits/messaging/Controller, a module of the kernel that quality/imports.mjs does not list for the application. Move the code that needs it into the presentation or the infra."]
+    ] },
+  { rule: "presentation-imports-only-listed-packages", branch: "a package", packages: { ...allowed, presentation: ["@ingenioz-it/caits/*"] }, files: { [controller]: `import { format } from "date-fns";\n${project[controller]}` }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 1, "The presentation layer imports date-fns, a package that quality/imports.mjs does not list for the presentation. Add it to the presentation in quality/imports.mjs, or move the code that needs it to a layer whose list holds it."]
+    ] },
+  { rule: "infra-imports-only-listed-packages", branch: "a Node API", packages: { ...allowed, infra: [] }, files: { [backendAdapter]: `import "node:fs";\n${project[backendAdapter]}` }, expected: [
+      ["src/backend/notes/infra/note-repository/in-memory-note-repository.ts", 1, "The infra layer imports node:fs, a Node API that quality/imports.mjs does not list for the infra. Add it to the infra in quality/imports.mjs, or move the code that needs it to a layer whose list holds it."]
+    ] },
+  { rule: "di-imports-only-listed-packages", branch: "a Node API", packages: { ...allowed, di: ["@ingenioz-it/caits/di/Container"] }, files: { "src/backend/notes/di.ts": `import "node:path";\n${project["src/backend/notes/di.ts"]}` }, expected: [
+      ["src/backend/notes/di.ts", 1, "This di.ts imports node:path, a Node API that quality/imports.mjs does not list for di.ts. Add it to di in quality/imports.mjs, or move the code that needs it to a layer whose list holds it."]
+    ] },
+  {
+    rule: "context-map-imports-only-listed-packages", branch: "a package",
+    packages: { ...allowed, contextMap: ["@ingenioz-it/caits/messaging/ContextMap", "@ingenioz-it/caits/messaging/FrontendContextMap"] },
+    files: { [contextMap]: `import "lodash";\n${project[contextMap]}` }, expected: [
+      ["src/backend/notes/context-map.ts", 1, "The context map imports lodash, a package that quality/imports.mjs does not list for the context map. Add it to contextMap in quality/imports.mjs, or move the code that needs it to a layer whose list holds it."]
+    ]
+  },
+  { rule: "entity-without-port", branch: "an entity", files: { [entity]: 'import type { NoteRepository } from "#context/domain/port/note-repository/NoteRepository.js";\n\nexport class Note { repository?: NoteRepository; }\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The entity Note imports the port NoteRepository (src/backend/notes/domain/port/note-repository/NoteRepository.js), but an entity or a value object holds business rules, and never talks to a port. Let the handler call NoteRepository, and give Note the values it needs."]
+    ] },
+  {
+    rule: "entity-without-port", branch: "a value object",
+    files: { "src/backend/notes/domain/value-object/Text.ts": 'import type { NoteRepository } from "#context/domain/port/note-repository/NoteRepository.js";\n\nexport class Text { repository?: NoteRepository; }\n' }, expected: [
+      ["src/backend/notes/domain/value-object/Text.ts", 1, "The value object Text imports the port NoteRepository (src/backend/notes/domain/port/note-repository/NoteRepository.js), but an entity or a value object holds business rules, and never talks to a port. Let the handler call NoteRepository, and give Text the values it needs."]
+    ]
+  },
+
+  { rule: "backend-use-case-shape", branch: "out of the folder of a use case", files: { "src/backend/notes/command/add-note.handler.ts": "export class AddNoteHandler {}\n" }, expected: [
+      ["src/backend/notes/command/add-note.handler.ts", undefined, "add-note.handler.ts is in command/ but in no folder of a use case: command/ holds one folder per use case. Move it to src/backend/notes/command/add-note/add-note.handler.ts."]
+    ] },
+  { rule: "backend-use-case-shape", branch: "a name that does not start with its use case", files: { "src/backend/notes/command/add-note/add.handler.ts": "export class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n" }, expected: [
+      ["src/backend/notes/command/add-note/add.handler.ts", undefined, "add.handler.ts does not start with the name of its use case, add-note. Rename it add-note.handler.ts."]
+    ] },
+  { rule: "backend-use-case-shape", branch: "a test whose name says no layer, next to one controller", files: { "src/backend/notes/command/add-note/add-note.test.ts": "test();\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.test.ts", undefined, "add-note.test.ts is a test of the use case add-note, but its name does not say the layer that it tests. Rename it add-note.application.test.ts if it tests the handler, or add-note.http.presentation.test.ts if it tests the controller add-note.http.controller.ts."]
+    ] },
+  { rule: "backend-use-case-shape", branch: "a test whose name says no layer, without a controller", files: { "src/backend/notes/command/remove-note/remove-note.test.ts": "test();\n" }, expected: [
+      ["src/backend/notes/command/remove-note/remove-note.test.ts", undefined, "remove-note.test.ts is a test of the use case remove-note, but its name does not say the layer that it tests. Rename it remove-note.application.test.ts if it tests the handler, or remove-note.{name}.presentation.test.ts if it tests the controller remove-note.{name}.controller.ts."]
+    ] },
+  {
+    rule: "backend-use-case-shape", branch: "a test whose name says no layer, next to two controllers",
+    files: {
+      "src/backend/notes/command/add-note/add-note.test.ts": "test();\n",
+      "src/backend/notes/command/add-note/add-note.form.controller.ts": 'import { Controller } from "@ingenioz-it/caits/messaging/Controller";\n\nexport class AddNoteFormController extends Controller {}\n'
+    },
+    expected: [
+      ["src/backend/notes/command/add-note/add-note.test.ts", undefined, "add-note.test.ts is a test of the use case add-note, but its name does not say the layer that it tests. Rename it add-note.application.test.ts if it tests the handler, or add-note.form.presentation.test.ts if it tests the controller add-note.form.controller.ts, or add-note.http.presentation.test.ts if it tests the controller add-note.http.controller.ts."]
+    ]
+  },
+  { rule: "backend-use-case-shape", branch: "another file", files: { "src/backend/notes/command/add-note/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/backend/notes/command/add-note/helpers.ts", undefined, "helpers.ts is not a file of a use case: command/add-note/ holds add-note.dto.ts, add-note.handler.ts and add-note.application.test.ts, and its controllers add-note.{name}.controller.ts, each with its test add-note.{name}.presentation.test.ts. Move its code into add-note.handler.ts, or into src/backend/notes/domain/ if another use case needs it."]
+    ] },
+  { rule: "frontend-use-case-shape", branch: "a controller", files: { "src/frontend/notes/query/list-notes/list-notes.http.controller.ts": "export class ListNotesHttpController {}\n" }, expected: [
+      ["src/frontend/notes/query/list-notes/list-notes.http.controller.ts", undefined, "list-notes.http.controller.ts is a controller, but a use case of the frontend has none: the store sends its DTOs to the message bus. Remove it, and let src/frontend/notes/presentation/store/notesStore.ts send the DTO of list-notes."]
+    ] },
+  { rule: "frontend-use-case-shape", branch: "an event", files: { "src/frontend/notes/query/list-notes/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\n' }, expected: [
+      ["src/frontend/notes/query/list-notes/NotesLoaded.ts", undefined, "NotesLoaded.ts is an event, but the events of a frontend context live in event/. Move it to src/frontend/notes/event/NotesLoaded.ts."]
+    ] },
+  { rule: "frontend-use-case-shape", branch: "out of the folder of a use case", files: { "src/frontend/notes/query/list-notes.dto.ts": "export class ListNotesQuery {}\n" }, expected: [
+      ["src/frontend/notes/query/list-notes.dto.ts", undefined, "list-notes.dto.ts is in query/ but in no folder of a use case: query/ holds one folder per use case. Move it to src/frontend/notes/query/list-notes/list-notes.dto.ts."]
+    ] },
+  { rule: "frontend-use-case-shape", branch: "a name that does not start with its use case", files: { "src/frontend/notes/query/list-notes/list.handler.ts": "export class ListNotesHandler {}\n" }, expected: [
+      ["src/frontend/notes/query/list-notes/list.handler.ts", undefined, "list.handler.ts does not start with the name of its use case, list-notes. Rename it list-notes.handler.ts."]
+    ] },
+  { rule: "frontend-use-case-shape", branch: "a test whose name says no layer", files: { "src/frontend/notes/query/list-notes/list-notes.test.ts": "test();\n" }, expected: [
+      ["src/frontend/notes/query/list-notes/list-notes.test.ts", undefined, "list-notes.test.ts is a test of the use case list-notes, but its name does not say the layer that it tests. Rename it list-notes.application.test.ts."]
+    ] },
+  { rule: "frontend-use-case-shape", branch: "another file", files: { "src/frontend/notes/query/list-notes/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/frontend/notes/query/list-notes/helpers.ts", undefined, "helpers.ts is not a file of a use case: query/list-notes/ holds list-notes.dto.ts, list-notes.handler.ts and list-notes.application.test.ts. Move its code into list-notes.handler.ts, or into src/frontend/notes/domain/ if another use case needs it."]
+    ] },
+  {
+    rule: "use-cases-isolated", branch: "a controller that sends the DTO of another use case",
+    files: { "src/backend/notes/query/list-notes/list-notes.http.controller.ts": 'import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";\n\nexport class ListNotesHttpController extends Controller { toDto() { return new AddNoteCommand(); } }\n' },
+    expected: [
+      ["src/backend/notes/query/list-notes/list-notes.http.controller.ts", 1, "The use case query/list-notes imports src/backend/notes/command/add-note/add-note.dto.js, a file of the use case command/add-note, but a use case imports nothing from another one: each changes, and goes, alone. Move this controller into src/backend/notes/command/add-note/, since a controller sends the DTO of its own use case."]
+    ]
+  },
+  {
+    rule: "use-cases-isolated", branch: "a handler that imports another use case",
+    files: { "src/backend/notes/command/edit-note/edit-note.handler.ts": 'import "#context/command/add-note/add-note.handler.js";\n\nexport class EditNoteHandler { execute() { return new EditNoteOutput(); } }\n' },
+    expected: [
+      ["src/backend/notes/command/edit-note/edit-note.handler.ts", 1, "The use case command/edit-note imports src/backend/notes/command/add-note/add-note.handler.js, a file of the use case command/add-note, but a use case imports nothing from another one: each changes, and goes, alone. Move what they share into src/backend/notes/domain/."]
+    ]
+  },
+  { rule: "use-cases-isolated", branch: "a use case of shared", files: { [handler]: 'import "#shared/command/announce/announce.dto.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The use case command/add-note imports src/backend/shared/command/announce/announce.dto.js, a file of the use case command/announce of shared, but a use case imports nothing from another one: each changes, and goes, alone. Move what they share into src/backend/notes/domain/."]
+    ] },
+  { rule: "handler-answers-output", branch: "its DTOs declare an Output", files: { [handler]: "export class AddNoteHandler { execute(): void {} }\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", undefined, "AddNoteHandler builds no Output DTO, but a backend handler answers with one. Return `new AddNoteOutput(…)` from execute, as add-note.dto.ts declares it."]
+    ] },
+  { rule: "handler-answers-output", branch: "its DTOs declare none", files: { "src/backend/notes/command/remove-note/remove-note.handler.ts": "export class RemoveNoteHandler { execute(): void {} }\n" }, expected: [
+      ["src/backend/notes/command/remove-note/remove-note.handler.ts", undefined, "RemoveNoteHandler builds no Output DTO, but a backend handler answers with one. Declare `export class RemoveNoteOutput` in remove-note.dto.ts, and return `new RemoveNoteOutput(…)` from execute."]
+    ] },
+  { rule: "controller-extends-controller", branch: "a class that extends nothing", files: { [controller]: "export class AddNoteHttpController {}\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 1, "AddNoteHttpController extends nothing, but a controller is an exported class …Controller that extends the Controller of the kernel. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
+    ] },
+  { rule: "controller-extends-controller", branch: "a class that is not exported", files: { [controller]: 'import { Controller } from "@ingenioz-it/caits/messaging/Controller";\n\nclass AddNoteHttpController extends Controller {}\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 3, "AddNoteHttpController is not exported, but a controller is an exported class …Controller that extends the Controller of the kernel. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
+    ] },
+  { rule: "controller-extends-controller", branch: "a class whose name does not end with Controller", files: { [controller]: 'import { Controller } from "@ingenioz-it/caits/messaging/Controller";\n\nexport class AddNoteHttp extends Controller {}\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 3, "AddNoteHttp does not end with Controller, but a controller is an exported class …Controller that extends the Controller of the kernel. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
+    ] },
+  { rule: "controller-extends-controller", branch: "no class", files: { [controller]: "export const handle = () => null;\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", undefined, "add-note.http.controller.ts holds no exported class …Controller, but a controller is an exported class …Controller that extends the Controller of the kernel. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
+    ] },
+
+  { rule: "frontend-event-shape", branch: "an event in a folder", files: { "src/frontend/notes/event/loaded/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\n' }, expected: [
+      ["src/frontend/notes/event/loaded/NotesLoaded.ts", undefined, "loaded/NotesLoaded.ts is not an event file: the events of a frontend context are in event/, one file per event, named after it. Move it to src/frontend/notes/event/NotesLoaded.ts."]
+    ] },
+  { rule: "event-file-exports-its-event", branch: "several exports", files: { "src/frontend/notes/event/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\nexport const LIMIT = 10;\n' }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", 2, "NotesLoaded.ts exports 2 names (NotesLoaded, LIMIT), but an event file exports only its event, NotesLoaded. Move LIMIT into NotesLoaded as a static member, or to a file of its own."]
+    ] },
+  { rule: "event-file-exports-its-event", branch: "no export", files: { "src/frontend/notes/event/NotesLoaded.ts": "class NotesLoaded {}\n" }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", undefined, "NotesLoaded.ts exports nothing, but an event file exports its event. Write `export class NotesLoaded { readonly type = \"notes.loaded\" as const; }`."]
+    ] },
+  { rule: "event-file-exports-its-event", branch: "another name", files: { "src/frontend/notes/event/NotesLoaded.ts": 'export class Loaded { readonly type = "notes.loaded" as const; }\n' }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", 1, "NotesLoaded.ts exports Loaded, but an event file exports the event of its name, NotesLoaded. Rename the export NotesLoaded, or the file Loaded.ts."]
+    ] },
+  { rule: "event-file-exports-its-event", branch: "another kind", files: { "src/frontend/notes/event/NotesLoaded.ts": "export function NotesLoaded() {}\n" }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", 1, "NotesLoaded.ts exports NotesLoaded as a function, but an event is a class, or a type that joins events. Write `export class NotesLoaded`."]
+    ] },
+  { rule: "event-type-names-context", branch: "another type", files: { "src/frontend/notes/event/NotesLoaded.ts": 'export class NotesLoaded {\n  readonly type = "notes.load" as const;\n}\n' }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", 2, "The type of NotesLoaded is \"notes.load\", but it must be \"notes.loaded\": the name of its context, then the name of the event without the context, in kebab-case. Write `readonly type = \"notes.loaded\" as const`."]
+    ] },
+  { rule: "event-type-names-context", branch: "a type that is not a string", files: { "src/frontend/notes/event/NotesLoaded.ts": "export class NotesLoaded {\n  readonly type = 1;\n}\n" }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", 2, "The type of NotesLoaded is not a string, but it must be \"notes.loaded\": the name of its context, then the name of the event without the context, in kebab-case. Write `readonly type = \"notes.loaded\" as const`."]
+    ] },
+  { rule: "event-type-names-context", branch: "a type that is not readonly", files: { "src/frontend/notes/event/NotesLoaded.ts": 'export class NotesLoaded {\n  type = "notes.loaded" as const;\n}\n' }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", 2, "The type of NotesLoaded is not readonly, so the store cannot tell the events apart. Write `readonly type = \"notes.loaded\" as const`."]
+    ] },
+  { rule: "event-type-names-context", branch: "a type that is not as const", files: { "src/frontend/notes/event/NotesLoaded.ts": 'export class NotesLoaded {\n  readonly type = "notes.loaded";\n}\n' }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", 2, "The type of NotesLoaded is not as const, so the store cannot tell the events apart. Write `readonly type = \"notes.loaded\" as const`."]
+    ] },
+  { rule: "event-type-names-context", branch: "a type that is neither readonly nor as const", files: { "src/frontend/notes/event/NotesLoaded.ts": 'export class NotesLoaded {\n  type = "notes.loaded";\n}\n' }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", 2, "The type of NotesLoaded is neither readonly nor as const, so the store cannot tell the events apart. Write `readonly type = \"notes.loaded\" as const`."]
+    ] },
+  { rule: "event-type-names-context", branch: "no type", files: { "src/frontend/notes/event/NotesLoaded.ts": "\nexport class NotesLoaded {}\n" }, expected: [
+      ["src/frontend/notes/event/NotesLoaded.ts", 2, "NotesLoaded has no type, so the store cannot tell it from the other events. Add `readonly type = \"notes.loaded\" as const`."]
+    ] },
+
+  {
+    rule: "frontend-presentation-shape", branch: "at the root of the presentation, used by one view",
+    files: {
+      "src/frontend/notes/presentation/helpers.ts": "export const trim = (text: string) => text.trim();\n",
+      "src/frontend/notes/presentation/view/notes-feed/notesFeed.ts": `import "#context/presentation/helpers.js";\n${project["src/frontend/notes/presentation/view/notes-feed/notesFeed.ts"]}`
+    },
+    expected: [
+      ["src/frontend/notes/presentation/helpers.ts", undefined, "helpers.ts is at the root of the presentation, which holds only NotesFrontend.ts besides view/, component/ and store/. Move it into the folder of the view that uses it, view/notes-feed/, or into a component of component/ if several views share it."]
+    ]
+  },
+  { rule: "frontend-presentation-shape", branch: "at the root of the presentation, used by no view", files: { "src/frontend/notes/presentation/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/frontend/notes/presentation/helpers.ts", undefined, "helpers.ts is at the root of the presentation, which holds only NotesFrontend.ts besides view/, component/ and store/. Move it into the folder of the view that uses it, or into a component of component/ if several views share it."]
+    ] },
+  { rule: "frontend-presentation-shape", branch: "in store/", files: { "src/frontend/notes/presentation/store/store.ts": "export default {};\n" }, expected: [
+      ["src/frontend/notes/presentation/store/store.ts", undefined, "store.ts is in store/, but the store of the context is store/notesStore.ts. Rename it notesStore.ts, or move its code into the store."]
+    ] },
+  { rule: "frontend-presentation-shape", branch: "directly in view/", files: { "src/frontend/notes/presentation/view/NotesList.marko": "<p>Notes</p>\n" }, expected: [
+      ["src/frontend/notes/presentation/view/NotesList.marko", undefined, "NotesList.marko is in view/ but in no folder of a view: view/ holds one folder each. Move it to view/notes-list/NotesList.marko."]
+    ] },
+  { rule: "frontend-presentation-shape", branch: "in a folder of a view that is not in kebab-case", files: { "src/frontend/notes/presentation/view/NotesList/NotesList.marko": "<p>Notes</p>\n" }, expected: [
+      ["src/frontend/notes/presentation/view/NotesList/NotesList.marko", undefined, "view/NotesList/NotesList.marko is not in a folder of a view: view/ holds one folder per view, named in kebab-case. Move it to src/frontend/notes/presentation/view/notes-list/NotesList.marko."]
+    ] },
+  { rule: "frontend-presentation-shape", branch: "in another folder", files: { "src/frontend/notes/presentation/page/Home.marko": "<p>Notes</p>\n" }, expected: [
+      ["src/frontend/notes/presentation/page/Home.marko", undefined, "page/Home.marko is in presentation/page/, but the presentation holds only view/, component/, store/ and NotesFrontend.ts, and the pages live in src/routes/_frontend/. Move a page to src/routes/_frontend/, and the rest into a view or a component."]
+    ] },
+  { rule: "zod-in-presentation", branch: "in the backend", files: { [backendAdapter]: `import { z } from "zod";\n${project[backendAdapter]}` }, expected: [
+      ["src/backend/notes/infra/note-repository/in-memory-note-repository.ts", 1, "The infra imports zod, but in the backend only the controllers check data with zod. Check the data in the controller that receives it, and give the infra typed values."]
+    ] },
+  { rule: "zod-in-presentation", branch: "in the frontend", files: { "src/frontend/notes/di.ts": `import "zod";\n${project["src/frontend/notes/di.ts"]}` }, expected: [
+      ["src/frontend/notes/di.ts", 1, "This di.ts imports zod, but in the frontend only the presentation and the adapters of the infra check data with zod. Check the data where it comes in, and give di.ts typed values."]
+    ] },
+  { rule: "zod-in-presentation", branch: "in the infra of the frontend", files: { [frontendAdapter]: `import "zod";\n${project[frontendAdapter]}` }, expected: [] },
+  { rule: "zod-in-presentation", branch: "in a layer with a list", packages: { ...allowed, infra: ["zod"] }, files: { [backendAdapter]: `import "zod";\n${project[backendAdapter]}` }, expected: [] },
+  { rule: "marko-in-frontend-presentation", branch: "in the frontend", files: { [frontendAdapter]: `import "marko";\n${project[frontendAdapter]}` }, expected: [
+      ["src/frontend/notes/infra/notes-gateway/http-notes-gateway.ts", 1, "The infra imports marko, but only the presentation of the frontend and the routes use Marko. Move the template into a view of src/frontend/notes/presentation/view/, and give the view its data as input."]
+    ] },
+  { rule: "marko-in-frontend-presentation", branch: "in the backend", files: { [backendAdapter]: `import "marko";\n${project[backendAdapter]}` }, expected: [
+      ["src/backend/notes/infra/note-repository/in-memory-note-repository.ts", 1, "The backend imports marko, but only the presentation of the frontend and the routes use Marko. Move the template into a view of a frontend context, which gets its data from the HTTP API of the backend."]
+    ] },
+  { rule: "marko-in-frontend-presentation", branch: "a view, which the rules on the layers check", files: { [frontendAdapter]: `import "#context/presentation/view/notes-block/NotesBlock.marko";\n${project[frontendAdapter]}` }, expected: [] },
+  {
+    rule: "dtos-sent-by-store", branch: "a DTO that the file names",
+    files: { "src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts": 'import { ListNotesQuery } from "#context/query/list-notes/list-notes.dto.js";\n\nexport const query = () => new ListNotesQuery();\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts", 1, "This file imports ListNotesQuery (src/frontend/notes/query/list-notes/list-notes.dto.js), an input DTO of the use case query/list-notes, but in the frontend only the store sends input DTOs. Publish an event of notes instead, and let src/frontend/notes/presentation/store/notesStore.ts turn it into ListNotesQuery."]
+    ]
+  },
+  { rule: "dtos-sent-by-store", branch: "a DTO that the file does not name", files: { "src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts": 'import "#context/query/list-notes/list-notes.dto.js";\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts", 1, "This file imports src/frontend/notes/query/list-notes/list-notes.dto.js, an input DTO of the use case query/list-notes, but in the frontend only the store sends input DTOs. Publish an event of notes instead, and let src/frontend/notes/presentation/store/notesStore.ts turn it into its DTO."]
+    ] },
+  { rule: "events-built-with-new", branch: "an event that a class gives", files: { "src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts": '\nexport const requested = { type: "notes.requested" };\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts", 2, "This file builds the event \"notes.requested\" as an object literal, so nothing checks its type or its data. Build it with `new NotesRequested(…)`, from src/frontend/notes/event/NotesRequested.ts."]
+    ] },
+  { rule: "events-built-with-new", branch: "an event that no class gives", files: { "src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts": 'export const refreshed = { type: "notes.refreshed" };\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-block/loadNotesBlock.ts", 1, "This file builds the event \"notes.refreshed\" as an object literal, so nothing checks its type or its data. Write the class NotesRefreshed in src/frontend/notes/event/NotesRefreshed.ts, with `readonly type = \"notes.refreshed\" as const`, and build the event with `new NotesRefreshed(…)`."]
+    ] },
+  { rule: "views-take-own-frontend", branch: "the frontend of another context", files: { "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko": '<button onClick() { frontendOf($global, "alerts"); }>Charger</button>\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-block/NotesBlock.marko", 1, "This view of notes takes the frontend of alerts, but a view or a component takes only the frontend of its own context. Publish an event of notes instead, and share it as an event of shared in src/frontend/notes/context-map.ts: the context map of alerts turns it into an event of its own."]
+    ] },
+  { rule: "views-take-own-frontend", branch: "the frontend of shared", files: { "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko": '<button onClick() { frontendOf($global, "shared"); }>Choisir</button>\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-block/NotesBlock.marko", 1, "This view of notes takes the frontend of shared, but a view or a component takes only the frontend of its own context. Publish an event of notes instead, and share it as an event of shared in src/frontend/notes/context-map.ts."]
+    ] },
+  { rule: "views-take-own-frontend", branch: "a component of shared", files: { "src/frontend/shared/presentation/component/badge/index.marko": '<button onClick() { frontendOf($global, "notes"); }>Choisir</button>\n' }, expected: [
+      ["src/frontend/shared/presentation/component/badge/index.marko", 1, "This component of shared takes the frontend of notes, but a view or a component takes only the frontend of its own context. Publish an event of shared instead: the context map of notes turns it into an event of its own."]
+    ] },
+  { rule: "views-take-own-frontend", branch: "the store", files: { [store]: `${project[store]}export const other = () => frontendOf($global, "alerts");\n` }, expected: [
+      ["src/frontend/notes/presentation/store/notesStore.ts", 4, "This file of notes takes the frontend of alerts, but a view or a component takes only the frontend of its own context. Publish an event of notes instead, and share it as an event of shared in src/frontend/notes/context-map.ts: the context map of alerts turns it into an event of its own."]
+    ] },
+  {
+    rule: "components-import-no-view", branch: "a component that imports a view",
+    files: { "src/frontend/notes/presentation/component/note-label/NoteLabel.marko": 'import "#context/presentation/view/notes-block/NotesBlock.marko";\n\n<p>Notes</p>\n' }, expected: [
+      ["src/frontend/notes/presentation/component/note-label/NoteLabel.marko", 1, "The component note-label imports src/frontend/notes/presentation/view/notes-block/NotesBlock.marko, a file of the view notes-block, but a component imports no view: the views place the components. Move what they both need into the component note-label, and let a route place the view notes-block."]
+    ]
+  },
+  {
+    rule: "views-import-no-view", branch: "a view that imports another view",
+    files: { "src/frontend/notes/presentation/view/notes-count/NotesCount.marko": 'import NotesBlock from "#context/presentation/view/notes-block/NotesBlock.marko";\n\n<NotesBlock/>\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-count/NotesCount.marko", 1, "The view notes-count imports src/frontend/notes/presentation/view/notes-block/NotesBlock.marko, a file of the view notes-block, but a view imports nothing from another view. Move what they share into a component of src/frontend/notes/presentation/component/, and let the route place the two views side by side."]
+    ]
+  },
+
+  { rule: "backend-infra-shape", branch: "an adapter not named after its port", files: { "src/backend/notes/infra/note-repository/memory.ts": "export class Memory implements NoteRepository {}\n" }, expected: [
+      ["src/backend/notes/infra/note-repository/memory.ts", undefined, "memory.ts is in infra/note-repository/, but an adapter is named after its implementation and its port: {implementation}-note-repository.ts. Rename it memory-note-repository.ts."]
+    ] },
+  { rule: "backend-infra-shape", branch: "a test not named after its port", files: { "src/backend/notes/infra/note-repository/memory.test.ts": "test();\n" }, expected: [
+      ["src/backend/notes/infra/note-repository/memory.test.ts", undefined, "memory.test.ts is in infra/note-repository/, but an adapter is named after its implementation and its port: {implementation}-note-repository.ts. Rename it memory-note-repository.test.ts."]
+    ] },
+  { rule: "backend-infra-shape", branch: "an adapter named after its port only", files: { "src/backend/notes/infra/note-repository/note-repository.ts": "export class Repository implements NoteRepository {}\n" }, expected: [
+      ["src/backend/notes/infra/note-repository/note-repository.ts", undefined, "note-repository.ts is in infra/note-repository/, but an adapter is named after its implementation and its port: {implementation}-note-repository.ts. Rename it {implementation}-note-repository.ts."]
+    ] },
+  { rule: "backend-infra-shape", branch: "an adapter out of the folder of its port", files: { "src/backend/notes/infra/memory.ts": "export class Memory implements NoteRepository {}\n" }, expected: [
+      ["src/backend/notes/infra/memory.ts", undefined, "infra/memory.ts is in no folder of a port: the infra holds one folder per port, infra/{port}/. Move it into the folder of the port that it implements, src/backend/notes/infra/note-repository/."]
+    ] },
+  { rule: "backend-infra-shape", branch: "a file out of the folders of the ports", files: { "src/backend/notes/infra/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/backend/notes/infra/helpers.ts", undefined, "infra/helpers.ts is in no folder of a port: the infra holds one folder per port, infra/{port}/. Move it into the folder of the port that it implements."]
+    ] },
+  { rule: "infra-folder-implements-port", branch: "a folder without its port", files: { "src/backend/notes/infra/clock/system-clock.ts": "export class SystemClock implements Clock {}\n" }, expected: [
+      ["src/backend/notes/infra/clock/system-clock.ts", undefined, "infra/clock/ is the folder of the port Clock, but the domain declares no such port. Write the port in src/backend/notes/domain/port/clock/Clock.ts, or move the adapter into the folder of the port that it implements."]
+    ] },
+  {
+    rule: "infra-folder-implements-port", branch: "an adapter of a port of another folder",
+    files: { "src/backend/notes/infra/storage/file-storage.ts": "export class FileNoteRepository implements NoteRepository {}\n" }, expected: [
+      ["src/backend/notes/infra/storage/file-storage.ts", undefined, "FileNoteRepository implements NoteRepository, but it is in infra/storage/, and the domain declares no port Storage. Move it to src/backend/notes/infra/note-repository/."]
+    ]
+  },
+  { rule: "adapter-implements-port", branch: "a class that implements nothing", files: { "src/backend/notes/infra/note-repository/file-note-repository.ts": "export class FileNoteRepository {}\n" }, expected: [
+      ["src/backend/notes/infra/note-repository/file-note-repository.ts", 1, "FileNoteRepository does not implement NoteRepository, the port of infra/note-repository/. Write `export class FileNoteRepository implements NoteRepository`, with `import type { NoteRepository } from \"#context/domain/port/note-repository/NoteRepository.js\"`."]
+    ] },
+  { rule: "adapter-implements-port", branch: "a class that implements another port", files: { "src/backend/notes/infra/note-repository/file-note-repository.ts": "export class FileNoteRepository implements Storage {}\n" }, expected: [
+      ["src/backend/notes/infra/note-repository/file-note-repository.ts", 1, "FileNoteRepository does not implement NoteRepository, the port of infra/note-repository/; it implements Storage. Write `export class FileNoteRepository implements NoteRepository`, with `import type { NoteRepository } from \"#context/domain/port/note-repository/NoteRepository.js\"`."]
+    ] },
+  { rule: "adapter-implements-port", branch: "no class", files: { "src/backend/notes/infra/note-repository/file-note-repository.ts": "export const repository = {};\n" }, expected: [
+      ["src/backend/notes/infra/note-repository/file-note-repository.ts", undefined, "file-note-repository.ts holds no class, but an adapter of infra/note-repository/ is a class that implements NoteRepository. Write `export class FileNoteRepository implements NoteRepository`."]
+    ] },
+  { rule: "adapter-test-runs-contract", branch: "a test that runs no contract", files: { "src/backend/notes/infra/note-repository/file-note-repository.test.ts": "test();\n" }, expected: [
+      ["src/backend/notes/infra/note-repository/file-note-repository.test.ts", undefined, "This test does not run the contract of NoteRepository, so nothing proves that FileNoteRepository does what every adapter of NoteRepository does. Import describeNoteRepositoryContract from \"#context/domain/port/note-repository/NoteRepository.contract.js\", and call it with a factory of FileNoteRepository."]
+    ] },
+  {
+    rule: "adapter-test-runs-contract", branch: "a test next to its adapter",
+    files: { "src/backend/notes/infra/note-repository/in-memory-note-repository.test.ts": "test();\n" }, expected: [
+      ["src/backend/notes/infra/note-repository/in-memory-note-repository.test.ts", undefined, "This test does not run the contract of NoteRepository, so nothing proves that InMemoryNoteRepository does what every adapter of NoteRepository does. Import describeNoteRepositoryContract from \"#context/domain/port/note-repository/NoteRepository.contract.js\", and call it with a factory of InMemoryNoteRepository."]
+    ]
+  },
+
+  { rule: "di-holds-bindings", branch: "an item that builds an adapter", files: { "src/backend/notes/di.ts": "export default [new InMemoryNoteRepository()];\n" }, expected: [
+      ["src/backend/notes/di.ts", 1, "The item `new InMemoryNoteRepository()` is not a binding, but a di.ts only binds: the kernel builds the dependencies. Write it `bind(NoteRepository).to(InMemoryNoteRepository)`."]
+    ] },
+  { rule: "di-holds-bindings", branch: "a binding without its adapter", files: { "src/backend/notes/di.ts": "export default [\n  bind(NoteRepository)\n];\n" }, expected: [
+      ["src/backend/notes/di.ts", 2, "The item `bind(NoteRepository)` is not a binding, but a di.ts only binds: the kernel builds the dependencies. Write it `bind(NoteRepository).to(Adapter)`."]
+    ] },
+  { rule: "di-holds-bindings", branch: "an item that is no binding", files: { "src/backend/notes/di.ts": "export default [makeRepository()];\n" }, expected: [
+      ["src/backend/notes/di.ts", 1, "The item `makeRepository()` is not a binding, but a di.ts only binds: the kernel builds the dependencies. Write it `bind(Port).to(Adapter)`."]
+    ] },
+  { rule: "di-holds-bindings", branch: "several exports", files: { "src/backend/notes/di.ts": "export const repository = 1;\nexport default [];\n" }, expected: [
+      ["src/backend/notes/di.ts", 1, "di.ts exports 2 names (repository, default), but a di.ts has one export, the list of its bindings. Write `export default [bind(Port).to(Adapter), …]`, and nothing else."]
+    ] },
+  { rule: "di-holds-bindings", branch: "an export that is no list", files: { "src/backend/notes/di.ts": "export default {};\n" }, expected: [
+      ["src/backend/notes/di.ts", 1, "di.ts exports no list, but a di.ts has one export, the list of its bindings. Write `export default [bind(Port).to(Adapter), …]`, and nothing else."]
+    ] },
+  { rule: "di-holds-bindings", branch: "no export", files: { "src/backend/notes/di.ts": "const bindings = [];\n" }, expected: [
+      ["src/backend/notes/di.ts", undefined, "di.ts exports no list, but a di.ts has one export, the list of its bindings. Write `export default [bind(Port).to(Adapter), …]`, and nothing else."]
+    ] },
+  { rule: "di-read-by-kernel", branch: "a handler that imports the di.ts", files: { [handler]: 'import "#context/di.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This file imports src/backend/notes/di.js, the di.ts of notes, but only the kernel reads a di.ts. Depend on the port that it needs instead, and the kernel gives it the adapter that di.ts binds."]
+    ] },
+
+  { rule: "sides-hold-contexts", branch: "a context map of the whole backend", files: { "src/backend/context-map.ts": "export default [];\n" }, expected: [
+      ["src/backend/context-map.ts", undefined, "src/backend/context-map.ts is not in a context, but src/backend holds only its contexts, and the integration tests of the whole backend (*.integration.test.ts). Move each of its lines into the context map of the context that reacts, src/backend/{context}/context-map.ts."]
+    ] },
+  { rule: "sides-hold-contexts", branch: "a test of the whole backend", files: { "src/backend/notes.test.ts": "test();\n" }, expected: [
+      ["src/backend/notes.test.ts", undefined, "notes.test.ts is a test of the whole backend, but its name does not say so. Rename it notes.integration.test.ts, or move it into the context that it tests."]
+    ] },
+  { rule: "sides-hold-contexts", branch: "another file of the backend", files: { "src/backend/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/backend/helpers.ts", undefined, "helpers.ts is in src/backend but in no context: src/backend holds only its contexts, and the integration tests of the whole backend (*.integration.test.ts). Move it into the context that it belongs to, such as src/backend/notes/ or src/backend/shared/."]
+    ] },
+  { rule: "sides-hold-contexts", branch: "a file of the frontend", files: { "src/frontend/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/frontend/helpers.ts", undefined, "helpers.ts is in src/frontend but in no context: src/frontend holds only its contexts. Move it into the context that it belongs to, such as src/frontend/notes/ or src/frontend/shared/."]
+    ] },
+  { rule: "context-content", branch: "a file in no folder of a backend context", files: { "src/backend/notes/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/backend/notes/helpers.ts", undefined, "helpers.ts is in no folder of its context: a context of the backend holds domain/, infra/, command/ and query/, with di.ts, test.di.ts and context-map.ts. Move its code into the domain if it holds business rules, into the use case that needs it, or into infra/, behind a port, if it talks to the outside world."]
+    ] },
+  { rule: "context-content", branch: "a file in no folder of a frontend context", files: { "src/frontend/notes/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/frontend/notes/helpers.ts", undefined, "helpers.ts is in no folder of its context: a context of the frontend holds domain/, infra/, command/, query/, event/ and presentation/, with di.ts, test.di.ts and context-map.ts. Move its code into the domain if it holds business rules, into the use case that needs it, or into infra/, behind a port, if it talks to the outside world."]
+    ] },
+  { rule: "context-content", branch: "an event in application/", files: { "src/frontend/notes/application/event/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\n' }, expected: [
+      ["src/frontend/notes/application/event/NotesLoaded.ts", undefined, "application/event/NotesLoaded.ts is in application/, but a context holds its use cases at its root, in command/ and query/, and the events of the frontend in event/. Move it to src/frontend/notes/event/NotesLoaded.ts."]
+    ] },
+  { rule: "context-content", branch: "a use case in application/", files: { "src/backend/notes/application/command/add-note/add-note.handler.ts": "export class Moved {}\n" }, expected: [
+      ["src/backend/notes/application/command/add-note/add-note.handler.ts", undefined, "application/command/add-note/add-note.handler.ts is in application/, but a context holds its use cases at its root, in command/ and query/, and the events of the frontend in event/. Move it to src/backend/notes/command/add-note/add-note.handler.ts."]
+    ] },
+  { rule: "context-map-translates-shared", branch: "a frontend map that imports a handler", files: { "src/frontend/notes/context-map.ts": 'import "#context/query/list-notes/list-notes.handler.js";\n\nexport default [];\n' }, expected: [
+      ["src/frontend/notes/context-map.ts", 1, "The context map imports src/frontend/notes/query/list-notes/list-notes.handler.js, a handler, but a context map of the frontend only translates: it imports events and the values of the domain. Give an event of notes from the line instead: the store and the handlers hear it."]
+    ] },
+  { rule: "context-map-translates-shared", branch: "a backend map that imports a handler", files: { [contextMap]: `import "#context/command/add-note/add-note.handler.js";\n${project[contextMap]}` }, expected: [
+      ["src/backend/notes/context-map.ts", 1, "The context map imports src/backend/notes/command/add-note/add-note.handler.js, a handler, but a context map only translates: it imports events, the input DTOs of its context, and the values of the domain. Import the input DTO from src/backend/notes/command/add-note/add-note.dto.js instead, and give it from the line: the kernel sends it to the handler."]
+    ] },
+  { rule: "context-map-translates-shared", branch: "a backend map that imports an adapter", files: { [contextMap]: `import "#context/infra/note-repository/in-memory-note-repository.js";\n${project[contextMap]}` }, expected: [
+      ["src/backend/notes/context-map.ts", 1, "The context map imports src/backend/notes/infra/note-repository/in-memory-note-repository.js, an adapter, but a context map only translates: it imports events, the input DTOs of its context, and the values of the domain. Remove the import, and give an event or an input DTO from the line."]
+    ] },
+  {
+    rule: "context-map-holds-lines", branch: "its lines by name",
+    files: { "src/frontend/notes/context-map.ts": 'import { when } from "@ingenioz-it/caits/messaging/FrontendContextMap";\nimport { LabelChosen } from "#frontend-shared/event/LabelChosen.js";\nimport { NotesRequested } from "#context/event/NotesRequested.js";\n\nexport const lines = [when(LabelChosen, () => [new NotesRequested()])];\n' },
+    expected: [
+      ["src/frontend/notes/context-map.ts", 5, "The context map exports its lines by name, lines, but a context map has one export, the list of its lines. Write `export default [when(Event, event => […]), share(Event, event => […])]`, and nothing else."]
+    ]
+  },
+  { rule: "context-map-holds-lines", branch: "several exports", files: { "src/frontend/notes/context-map.ts": `${FRONTEND_MAP_IMPORTS}\nexport const LINES = 2;\nexport default [when(LabelChosen, () => [new NotesRequested()]), share(NoteLabelChosen, () => [new LabelChosen()])];\n` }, expected: [
+      ["src/frontend/notes/context-map.ts", 6, "The context map exports 2 names (LINES, default), but a context map has one export, the list of its lines. Write `export default [when(Event, event => […]), share(Event, event => […])]`, and nothing else."]
+    ] },
+  { rule: "context-map-holds-lines", branch: "no export", files: { "src/frontend/notes/context-map.ts": FRONTEND_MAP_IMPORTS }, expected: [
+      ["src/frontend/notes/context-map.ts", undefined, "The context map exports nothing, but a context map has one export, the list of its lines. Write `export default [when(Event, event => […]), share(Event, event => […])]`, and nothing else."]
+    ] },
+  { rule: "context-map-holds-lines", branch: "a default that is not a list", files: { "src/frontend/notes/context-map.ts": `${FRONTEND_MAP_IMPORTS}\nexport default {};\n` }, expected: [
+      ["src/frontend/notes/context-map.ts", 6, "The context map exports a default that is not a list, but a context map has one export, the list of its lines. Write `export default [when(Event, event => […]), share(Event, event => […])]`, and nothing else."]
+    ] },
+  { rule: "context-map-holds-lines", branch: "an item that is not a line", files: { [contextMap]: `${project[contextMap].replace("export default [", "export default [...[], ")}` }, expected: [
+      ["src/backend/notes/context-map.ts", 7, "The item `...[]` is not a line: each line of a context map is made with when(…) or share(…). Write it `when(SharedEvent, event => […])` to hear an event of shared, or `share(OwnEvent, event => […])` to share an event of notes."]
+    ] },
+  { rule: "context-map-holds-lines", branch: "when and share of the other side", files: { [contextMap]: `${FRONTEND_MAP_IMPORTS}\nexport default [];\n` }, expected: [
+      ["src/backend/notes/context-map.ts", 1, "The context map takes share from @ingenioz-it/caits/messaging/FrontendContextMap, but a context map of the backend takes it from @ingenioz-it/caits/messaging/ContextMap. Import share from @ingenioz-it/caits/messaging/ContextMap."],
+      ["src/backend/notes/context-map.ts", 1, "The context map takes when from @ingenioz-it/caits/messaging/FrontendContextMap, but a context map of the backend takes it from @ingenioz-it/caits/messaging/ContextMap. Import when from @ingenioz-it/caits/messaging/ContextMap."]
+    ] },
+  {
+    rule: "context-map-line-direction", branch: "the lines of the backend that go the wrong way",
+    files: { [contextMap]: `${BACKEND_MAP_IMPORTS}\nexport default [\n  when(NoteAdded, () => [new AddNoteCommand()]),\n  share(NotePosted, () => [new UserJoined()]),\n  share(NoteAdded, () => [new AddNoteCommand()]),\n  when(UserJoined, () => [new NotePosted()])\n];\n` },
+    expected: [
+      ["src/backend/notes/context-map.ts", 8, "The line `when(NoteAdded, …)` starts from NoteAdded, an event of notes, but when(…) hears an event of shared, from the shared bus: this line never runs. Write it `share(NoteAdded, …)` to share it, or hear an event of src/backend/shared/domain/event/."],
+      ["src/backend/notes/context-map.ts", 9, "The line `share(NotePosted, …)` starts from NotePosted, an event of shared, but share(…) starts from an event of notes: this line never runs. Write it `when(NotePosted, …)` to react to NotePosted, or start it from an event of src/backend/notes/domain/event/."],
+      ["src/backend/notes/context-map.ts", 10, "The line `share(NoteAdded, …)` gives AddNoteCommand, which is not an event of shared, but share(…) gives events of shared. Give an event of src/backend/shared/domain/event/ instead."],
+      ["src/backend/notes/context-map.ts", 11, "The line `when(UserJoined, …)` gives NotePosted, which is not an input DTO of notes, but when(…) gives what its context reacts to. Give an input DTO of src/backend/notes/command/ or src/backend/notes/query/ instead."]
+    ]
+  },
+  {
+    rule: "context-map-line-direction", branch: "a line of the frontend that gives an event of shared",
+    files: { "src/frontend/notes/context-map.ts": `${FRONTEND_MAP_IMPORTS}\nexport default [when(LabelChosen, () => [new LabelChosen()]), share(NoteLabelChosen, () => [new LabelChosen()])];\n` }, expected: [
+      ["src/frontend/notes/context-map.ts", 6, "The line `when(LabelChosen, …)` gives LabelChosen, which is not an event of notes, but when(…) gives what its context reacts to. Give an event of src/frontend/notes/event/ instead."]
+    ]
+  },
+  {
+    rule: "context-map-line-direction", branch: "lines whose event is no event",
+    files: { "src/frontend/notes/context-map.ts": `${FRONTEND_MAP_IMPORTS}import { Label } from "#frontend-shared/domain/value-object/Label.js";\n\nexport default [when(Label, () => []), share(Label, () => [])];\n` }, expected: [
+      ["src/frontend/notes/context-map.ts", 7, "The line `when(Label, …)` starts from Label, which is not an event of shared: this line never runs. Hear an event of src/frontend/shared/event/."],
+      ["src/frontend/notes/context-map.ts", 7, "The line `share(Label, …)` starts from Label, which is not an event of notes: this line never runs. Start it from an event of src/frontend/notes/event/."]
+    ]
+  },
+  {
+    rule: "context-maps-without-cycle", branch: "a cycle in one map",
+    files: { "src/frontend/notes/context-map.ts": `${FRONTEND_MAP_IMPORTS}\nexport default [\n  when(LabelChosen, () => [new NoteLabelChosen()]),\n  share(NoteLabelChosen, () => [new LabelChosen()])\n];\n` }, expected: [
+      ["src/frontend/notes/context-map.ts", 7, "The context maps of the frontend make a cycle of events, NoteLabelChosen → LabelChosen → NoteLabelChosen, which the buses would carry without end, and the page would stop. Remove one of its lines: NoteLabelChosen → LabelChosen in src/frontend/notes/context-map.ts, or LabelChosen → NoteLabelChosen in src/frontend/notes/context-map.ts."]
+    ]
+  },
+  { rule: "shared-events-in-map", branch: "a handler of the backend", files: { [handler]: 'import { NotePosted } from "#shared/domain/event/NotePosted.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(new NotePosted()); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This file imports NotePosted (src/backend/shared/domain/event/NotePosted.js), an event of shared, but in a context other than shared only the context map names the events of shared. Publish an event of notes instead, in src/backend/notes/domain/event/, and share it as NotePosted in src/backend/notes/context-map.ts."]
+    ] },
+  { rule: "shared-events-in-map", branch: "a handler of the frontend", files: { "src/frontend/notes/query/list-notes/list-notes.handler.ts": 'import "#frontend-shared/event/LabelChosen.js";\n\nexport class ListNotesHandler {}\n' }, expected: [
+      ["src/frontend/notes/query/list-notes/list-notes.handler.ts", 1, "This file imports src/frontend/shared/event/LabelChosen.js, an event of shared, but in a context other than shared only the context map names the events of shared. Publish an event of notes instead, in src/frontend/notes/event/, and share it as an event of shared in src/frontend/notes/context-map.ts."]
+    ] },
+  { rule: "shared-hears-no-context", branch: "a context map of shared", files: { "src/frontend/shared/context-map.ts": "export default [];\n" }, expected: [
+      ["src/frontend/shared/context-map.ts", undefined, "The context shared has a context map, but shared hears no other context: its events are on the shared bus already, and the contexts hear them. Remove this file, and move each of its lines into the context map of the context that reacts."]
+    ] },
+  { rule: "context-has-di", branch: "a context without a port", files: { "src/backend/alerts/domain/event/AlertRaised.ts": "export class AlertRaised {}\n" }, expected: [
+      ["src/backend/alerts", undefined, "src/backend/alerts is a context, but it has no di.ts, so the kernel does not find it. Write src/backend/alerts/di.ts with its bindings: `export default []`."]
+    ] },
+  {
+    rule: "context-has-di", branch: "a context with a port and its adapter",
+    files: {
+      "src/backend/alerts/domain/port/alert-sender/AlertSender.ts": "export interface AlertSender { send(): void }\n",
+      "src/backend/alerts/infra/alert-sender/email-alert-sender.ts": "export class EmailAlertSender implements AlertSender { send() {} }\n"
+    },
+    expected: [
+      ["src/backend/alerts", undefined, "src/backend/alerts is a context, but it has no di.ts, so the kernel does not find it. Write src/backend/alerts/di.ts with its bindings: `export default [bind(AlertSender).to(EmailAlertSender)]`."]
+    ]
+  },
+  { rule: "shared-components-are-tags", branch: "a component without index.marko, with one template", files: { "src/frontend/shared/presentation/component/chip/Chip.marko": "<span>Chip</span>\n" }, expected: [
+      ["src/frontend/shared/presentation/component/chip", undefined, "The component chip of shared has no index.marko, but a component of the frontend context shared is a Marko tag, which its index.marko holds. Rename src/frontend/shared/presentation/component/chip/Chip.marko to index.marko."]
+    ] },
+  { rule: "shared-components-are-tags", branch: "a component without a template", files: { "src/frontend/shared/presentation/component/chip/chip.scss": ".chip { color: red; }\n" }, expected: [
+      ["src/frontend/shared/presentation/component/chip", undefined, "The component chip of shared has no index.marko, but a component of the frontend context shared is a Marko tag, which its index.marko holds. Write src/frontend/shared/presentation/component/chip/index.marko."]
+    ] },
+  {
+    rule: "shared-components-placed-by-tag", branch: "a view that imports a component of shared",
+    files: { "src/frontend/notes/presentation/view/notes-count/NotesCount.marko": 'import Badge from "#frontend-shared/presentation/component/badge/index.marko";\n\n<Badge label=input.label/>\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-count/NotesCount.marko", 1, "This file imports src/frontend/shared/presentation/component/badge/index.marko, the component badge of shared, but Marko does not build an import of its file from another context. Remove the import, and place the component by its tag, `<badge>`."]
+    ]
+  },
+  { rule: "imports-by-shortcut", branch: "a file of its context", files: { [handler]: 'import "../../domain/entity/Note.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This file imports ../../domain/entity/Note.js, which goes up a folder: the import breaks when the file moves. Import it as #context/domain/entity/Note.js."]
+    ] },
+  { rule: "imports-by-shortcut", branch: "a file of shared in the backend", files: { "src/backend/notes/domain/entity/Note.ts": 'import "../../../shared/domain/value-object/Text.js";\n\nexport class Note {}\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "This file imports ../../../shared/domain/value-object/Text.js, which goes up a folder: the import breaks when the file moves. Import it as #shared/domain/value-object/Text.js."]
+    ] },
+  { rule: "imports-by-shortcut", branch: "a file of shared in the frontend", files: { "src/frontend/notes/presentation/NotesFrontend.ts": 'import "../../shared/domain/value-object/Label.js";\n\nexport type NotesFrontend = { events: object };\n' }, expected: [
+      ["src/frontend/notes/presentation/NotesFrontend.ts", 1, "This file imports ../../shared/domain/value-object/Label.js, which goes up a folder: the import breaks when the file moves. Import it as #frontend-shared/domain/value-object/Label.js."]
+    ] },
+  { rule: "imports-by-shortcut", branch: "a route", files: { "src/routes/_frontend/+page.marko": 'import NotesBlock from "../../frontend/notes/presentation/view/notes-block/NotesBlock.marko";\n\n<main><${NotesBlock}/></main>\n' }, expected: [
+      ["src/routes/_frontend/+page.marko", 1, "This file imports ../../frontend/notes/presentation/view/notes-block/NotesBlock.marko, which goes up a folder: the import breaks when the file moves. Import it as #frontend/notes/presentation/view/notes-block/NotesBlock.marko."]
+    ] },
+  { rule: "imports-by-shortcut", branch: "a file that no shortcut leads to", files: { [handler]: 'import "../../../../../test/support/notes.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This file imports ../../../../../test/support/notes.js, which goes up a folder: the import breaks when the file moves. Use #context/ in a context, #shared/ or #frontend-shared/ for shared, and #backend/ or #frontend/ in a route."]
+    ] },
+  { rule: "imports-by-shortcut", branch: "a stylesheet", files: { "src/frontend/notes/presentation/view/notes-block/NotesBlock.scss": '\n@use "../../../../../routes/_frontend/style/theme";\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-block/NotesBlock.scss", 2, "This stylesheet loads ../../../../../routes/_frontend/style/theme, which goes up a folder, but a stylesheet loads only the files of its folder: Sass reads # as the start of a fragment. Read the values of the theme as CSS variables instead."]
+    ] },
+  { rule: "contexts-isolated", branch: "a handler of the backend", files: { [handler]: 'import "#backend/alerts/domain/event/AlertRaised.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The context notes imports src/backend/alerts/domain/event/AlertRaised.js, a file of the context alerts, but a context never imports another context. Publish an event of notes, share it as an event of shared in src/backend/notes/context-map.ts, and turn it into an input of alerts in src/backend/alerts/context-map.ts."]
+    ] },
+  { rule: "contexts-isolated", branch: "a handler of the frontend", files: { "src/frontend/notes/query/list-notes/list-notes.handler.ts": 'import "#frontend/alerts/event/AlertRaised.js";\n\nexport class ListNotesHandler {}\n' }, expected: [
+      ["src/frontend/notes/query/list-notes/list-notes.handler.ts", 1, "The context notes imports src/frontend/alerts/event/AlertRaised.js, a file of the context alerts, but a context never imports another context. Publish an event of notes, share it as an event of shared in src/frontend/notes/context-map.ts, and turn it into an event of alerts in src/frontend/alerts/context-map.ts."]
+    ] },
+  { rule: "contexts-isolated", branch: "a view that imports a view of another context", files: { "src/frontend/notes/presentation/view/notes-count/NotesCount.marko": 'import "#frontend/alerts/presentation/view/alert-list/AlertList.marko";\n\n<p>Notes</p>\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-count/NotesCount.marko", 1, "The view notes-count of notes imports src/frontend/alerts/presentation/view/alert-list/AlertList.marko, a view of alerts, but a context never imports another context. Let the route place the two views side by side."]
+    ] },
+  { rule: "contexts-isolated", branch: "the context shared", files: { "src/backend/shared/domain/event/UserJoined.ts": 'import "#backend/notes/domain/entity/Note.js";\n\nexport class UserJoined {}\n' }, expected: [
+      ["src/backend/shared/domain/event/UserJoined.ts", 1, "The context shared imports src/backend/notes/domain/entity/Note.js, a file of the context notes, but a context never imports another context. Publish an event of shared: the context map of notes turns it into an input of its own."]
+    ] },
+  { rule: "tests-in-one-context", branch: "a test of a context", files: { "src/backend/notes/command/add-note/add-note.application.test.ts": 'import { RaiseCommand } from "#backend/alerts/command/raise/raise.dto.js";\n\ntest(() => new RaiseCommand());\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.application.test.ts", 1, "This test of backend/notes reads backend/alerts, but a test reads only its context and shared: each context is tested alone. Split it: test in backend/notes what its context map shares, and in backend/alerts what its context map does with that event of shared."]
+    ] },
+  { rule: "tests-in-one-context", branch: "a test of a view that builds another frontend", files: { "src/frontend/notes/presentation/view/notes-block/NotesBlock.test.ts": '\ntest(() => testPresentation("alerts"));\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-block/NotesBlock.test.ts", 2, "This test of frontend/notes reads frontend/alerts, but a test reads only its context and shared: each context is tested alone. Split it: test in frontend/notes what its context map shares, and in frontend/alerts what its context map does with that event of shared."]
+    ] },
+  {
+    rule: "tests-in-one-context", branch: "an integration test of two contexts",
+    files: { "src/backend/backend.integration.test.ts": 'import { AddNoteCommand } from "./notes/command/add-note/add-note.dto.js";\nimport { RaiseCommand } from "./alerts/command/raise/raise.dto.js";\n\ntest(() => [AddNoteCommand, RaiseCommand]);\n' },
+    expected: [
+      ["src/backend/backend.integration.test.ts", 2, "This test reads backend/notes and backend/alerts, but a test outside the contexts reads one context at most, and the context shared of its side. Split it into one test per context."]
+    ]
+  },
+  { rule: "sides-apart", branch: "the frontend imports the backend", files: { [store]: 'import { AddNoteCommand } from "#backend/notes/command/add-note/add-note.dto.js";\n\nexport default { send: () => new AddNoteCommand() };\n' }, expected: [
+      ["src/frontend/notes/presentation/store/notesStore.ts", 1, "The frontend imports src/backend/notes/command/add-note/add-note.dto.js, a file of the backend, but the frontend and the backend are two projects, which talk only through the HTTP API. Declare what the frontend needs in src/frontend/notes, and call the API through an adapter of src/frontend/notes/infra/, behind a port."]
+    ] },
+  { rule: "sides-apart", branch: "the backend imports the frontend", files: { [handler]: 'import "#frontend/notes/event/NotesRequested.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The backend imports src/frontend/notes/event/NotesRequested.js, a file of the frontend, but the frontend and the backend are two projects, which talk only through the HTTP API. Declare what the backend needs in src/backend/notes."]
+    ] },
+  { rule: "domain-imports-no-application", branch: "an input DTO", files: { [entity]: 'import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";\n\nexport class Note { command?: AddNoteCommand; }\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The domain layer must not import the application layer (src/backend/notes/command/add-note/add-note.dto.js): the use cases depend on the domain, not the other way. Let the handler read the DTO, and give Note the values it needs."]
+    ] },
+  { rule: "domain-imports-no-application", branch: "an event of the frontend", files: { "src/frontend/notes/domain/entity/Note.ts": 'import { LabelChosen } from "#frontend-shared/event/LabelChosen.js";\n\nexport class Note {}\n' }, expected: [
+      ["src/frontend/notes/domain/entity/Note.ts", 1, "The domain layer must not import the application layer (src/frontend/shared/event/LabelChosen.js): the use cases depend on the domain, not the other way. Move what the domain needs into src/frontend/notes/domain/."]
+    ] },
+  { rule: "domain-imports-no-presentation", branch: "a controller", files: { [entity]: 'import "#context/command/add-note/add-note.http.controller.js";\n\nexport class Note {}\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The domain layer must not import the presentation layer (src/backend/notes/command/add-note/add-note.http.controller.js): the presentation reads the domain, not the other way. Move what the domain needs into src/backend/notes/domain/."]
+    ] },
+  { rule: "domain-imports-no-infra", branch: "an adapter", files: { [entity]: 'import "#context/infra/note-repository/in-memory-note-repository.js";\n\nexport class Note {}\n' }, expected: [
+      ["src/backend/notes/domain/entity/Note.ts", 1, "The domain layer must not import the infra layer (src/backend/notes/infra/note-repository/in-memory-note-repository.js): the domain declares what it needs, and the infra implements it. Declare it as a port in src/backend/notes/domain/port/, and let a handler call the port and give the result to Note."]
+    ] },
+  { rule: "application-imports-no-presentation", branch: "a handler of the backend", files: { [handler]: 'import "./add-note.http.controller.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The application layer must not import the presentation layer (src/backend/notes/command/add-note/add-note.http.controller.js): the controller sends the use case its DTO, not the other way. Move what the handler needs into add-note.dto.ts, or into src/backend/notes/domain/."]
+    ] },
+  { rule: "application-imports-no-presentation", branch: "a handler of the frontend", files: { "src/frontend/notes/query/list-notes/list-notes.handler.ts": 'import "#context/presentation/store/notesStore.js";\n\nexport class ListNotesHandler {}\n' }, expected: [
+      ["src/frontend/notes/query/list-notes/list-notes.handler.ts", 1, "The application layer must not import the presentation layer (src/frontend/notes/presentation/store/notesStore.js): the store and the views hear the use cases through events. Publish an event of notes instead, and let the store or the view hear it."]
+    ] },
+  { rule: "application-imports-no-presentation", branch: "a file of the application out of a use case", files: { "src/backend/notes/command/helpers.ts": 'import "#context/command/add-note/add-note.http.controller.js";\n\nexport const trim = (text: string) => text.trim();\n' }, expected: [
+      ["src/backend/notes/command/helpers.ts", 1, "The application layer must not import the presentation layer (src/backend/notes/command/add-note/add-note.http.controller.js): the controller sends the use case its DTO, not the other way. Move what it needs into src/backend/notes/domain/."]
+    ] },
+  { rule: "application-imports-no-infra", branch: "an adapter in the folder of its port", files: { [handler]: 'import "#context/infra/note-repository/in-memory-note-repository.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The application layer must not import the infra layer (src/backend/notes/infra/note-repository/in-memory-note-repository.js). Depend on its port, NoteRepository (src/backend/notes/domain/port/note-repository/NoteRepository.ts), instead, and bind the adapter in src/backend/notes/di.ts."]
+    ] },
+  { rule: "application-imports-no-infra", branch: "a file of the infra out of the folders of the ports", files: { [handler]: 'import "#context/infra/helpers.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The application layer must not import the infra layer (src/backend/notes/infra/helpers.js). Depend on its port in domain/port/ instead, and bind the adapter in src/backend/notes/di.ts."]
+    ] },
+  { rule: "presentation-imports-no-infra", branch: "a controller", files: { [controller]: `import "#context/infra/note-repository/in-memory-note-repository.js";\n${project[controller]}` }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 1, "The presentation layer must not import the infra layer (src/backend/notes/infra/note-repository/in-memory-note-repository.js): a controller sends a DTO to its use case, and the handler uses the port. Send the DTO of add-note, and let src/backend/notes/command/add-note/add-note.handler.ts depend on NoteRepository (src/backend/notes/domain/port/note-repository/NoteRepository.ts); src/backend/notes/di.ts binds the adapter."]
+    ] },
+  { rule: "presentation-imports-no-infra", branch: "a file of the presentation out of a use case", files: { "src/backend/notes/presentation/helpers.ts": 'import "#context/infra/note-repository/in-memory-note-repository.js";\n\nexport const trim = (text: string) => text.trim();\n' }, expected: [
+      ["src/backend/notes/presentation/helpers.ts", 1, "The presentation layer must not import the infra layer (src/backend/notes/infra/note-repository/in-memory-note-repository.js): a controller sends a DTO to its use case, and the handler uses the port. Send the DTO of its use case, and let the handler depend on NoteRepository (src/backend/notes/domain/port/note-repository/NoteRepository.ts); src/backend/notes/di.ts binds the adapter."]
+    ] },
+  {
+    rule: "presentation-imports-no-infra", branch: "a view",
+    files: { "src/frontend/notes/presentation/view/notes-feed/notesFeed.ts": `import "#context/infra/notes-gateway/http-notes-gateway.js";\n${project["src/frontend/notes/presentation/view/notes-feed/notesFeed.ts"]}` }, expected: [
+      ["src/frontend/notes/presentation/view/notes-feed/notesFeed.ts", 1, "The presentation layer must not import the infra layer (src/frontend/notes/infra/notes-gateway/http-notes-gateway.js): a view publishes events, and the handlers of the use cases call the ports. Publish an event of notes, let the store send the DTO of a use case, and let its handler depend on NotesGateway (src/frontend/notes/domain/port/notes-gateway/NotesGateway.ts)."]
+    ]
+  },
+  { rule: "infra-imports-no-presentation", branch: "an adapter of the frontend", files: { [frontendAdapter]: `import "#context/presentation/view/notes-block/NotesBlock.marko";\n${project[frontendAdapter]}` }, expected: [
+      ["src/frontend/notes/infra/notes-gateway/http-notes-gateway.ts", 1, "The infra layer must not import the presentation layer (src/frontend/notes/presentation/view/notes-block/NotesBlock.marko): an adapter implements a port of the domain, and knows neither the views nor the controllers. Move what the adapter needs into src/frontend/notes/domain/, or the application of the frontend."]
+    ] },
+  { rule: "infra-imports-no-presentation", branch: "an adapter of the backend", files: { [backendAdapter]: `import "#context/command/add-note/add-note.http.controller.js";\n${project[backendAdapter]}` }, expected: [
+      ["src/backend/notes/infra/note-repository/in-memory-note-repository.ts", 1, "The infra layer must not import the presentation layer (src/backend/notes/command/add-note/add-note.http.controller.js): an adapter implements a port of the domain, and knows neither the views nor the controllers. Move what the adapter needs into src/backend/notes/domain/."]
+    ] },
+  { rule: "infra-imports-no-application", branch: "an adapter of the backend", files: { [backendAdapter]: `import "#context/command/add-note/add-note.dto.js";\n${project[backendAdapter]}` }, expected: [
+      ["src/backend/notes/infra/note-repository/in-memory-note-repository.ts", 1, "In the backend, the infra layer must not import the application layer (src/backend/notes/command/add-note/add-note.dto.js): an adapter implements a port, and the use cases call it. Move what the adapter needs into src/backend/notes/domain/, such as a value object that the port takes."]
+    ] },
+  { rule: "infra-imports-no-application", branch: "an adapter of the frontend, which may", files: { [frontendAdapter]: `import "#context/event/NotesRequested.js";\n${project[frontendAdapter]}` }, expected: [] },
+  { rule: "di-imports-no-application", branch: "a handler", files: { "src/backend/notes/di.ts": `import "./command/add-note/add-note.handler.js";\n${project["src/backend/notes/di.ts"]}` }, expected: [
+      ["src/backend/notes/di.ts", 1, "di.ts must not import the application layer (src/backend/notes/command/add-note/add-note.handler.js): it binds the ports of the domain to the adapters of the infra. Remove the import: the kernel finds the handlers and the DTOs in command/ and query/ by itself."]
+    ] },
+  { rule: "di-imports-no-presentation", branch: "a controller", files: { "src/backend/notes/di.ts": `import "./command/add-note/add-note.http.controller.js";\n${project["src/backend/notes/di.ts"]}` }, expected: [
+      ["src/backend/notes/di.ts", 1, "di.ts must not import the presentation layer (src/backend/notes/command/add-note/add-note.http.controller.js): it binds the ports of the domain to the adapters of the infra. Remove the import: the kernel finds the controllers in command/ and query/ by itself, and the routes place the views."]
+    ] },
+  { rule: "context-map-read-by-kernel", branch: "a view", files: { "src/frontend/notes/presentation/view/notes-count/NotesCount.marko": 'import "#context/context-map.js";\n\n<p>Notes</p>\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-count/NotesCount.marko", 1, "The presentation imports src/frontend/notes/context-map.js, the context map of notes, but only the kernel reads a context map. Remove the import, publish an event of notes, and let the context map share it."]
+    ] },
+  { rule: "context-map-read-by-kernel", branch: "a handler", files: { [handler]: 'import "#context/context-map.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The application imports src/backend/notes/context-map.js, the context map of notes, but only the kernel reads a context map. Remove the import, publish an event of notes, and let the context map share it."]
+    ] },
+  { rule: "context-map-read-by-kernel", branch: "a di.ts", files: { "src/backend/notes/di.ts": `import "./context-map.js";\n${project["src/backend/notes/di.ts"]}` }, expected: [
+      ["src/backend/notes/di.ts", 1, "This di.ts imports src/backend/notes/context-map.js, the context map of notes, but only the kernel reads a context map. Remove the import, publish an event of notes, and let the context map share it."]
+    ] },
+  { rule: "contexts-without-routes", branch: "a handler", files: { [handler]: 'import "/src/routes/_backend/api/notes/+handler.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The context notes imports src/routes/_backend/api/notes/+handler.js, a route, but the routes use the contexts, never the other way. Move what it needs into src/backend/notes."]
+    ] },
+  { rule: "contexts-without-routes", branch: "a stylesheet", files: { "src/frontend/notes/presentation/view/notes-block/NotesBlock.scss": '@use "values";\n' }, expected: [
+      ["src/frontend/notes/presentation/view/notes-block/NotesBlock.scss", 1, "This stylesheet loads src/routes/_frontend/style/_values.scss, a stylesheet of the routes, but the routes use the contexts, never the other way. Read the values of the theme as CSS variables instead."]
+    ] },
+
+  { rule: "routes-folders", branch: "an HTTP handler", files: { "src/routes/api/+handler.ts": "export const GET = () => null;\n" }, expected: [
+      ["src/routes/api/+handler.ts", undefined, "src/routes/api/+handler.ts is outside _frontend and _backend, so it is on no side. Move it to src/routes/_backend/api/+handler.ts."]
+    ] },
+  { rule: "routes-folders", branch: "a page", files: { "src/routes/home/+page.marko": "<p>Home</p>\n" }, expected: [
+      ["src/routes/home/+page.marko", undefined, "src/routes/home/+page.marko is outside _frontend and _backend, so it is on no side. Move it to src/routes/_frontend/home/+page.marko."]
+    ] },
+  { rule: "routes-folders", branch: "another file", files: { "src/routes/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/routes/helpers.ts", undefined, "src/routes/helpers.ts is outside _frontend and _backend, so it is on no side. Move a page or a layout to src/routes/_frontend/, and an HTTP handler to src/routes/_backend/."]
+    ] },
+  { rule: "frontend-routes-content", branch: "code", files: { "src/routes/_frontend/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/routes/_frontend/helpers.ts", undefined, "helpers.ts is code in the routes, but the routes hold no logic and no test. Move it into a frontend context: the code into its layers, with its test, and let the page place the view that uses it."]
+    ] },
+  { rule: "frontend-routes-content", branch: "a test", files: { "src/routes/_frontend/messages.test.ts": "test();\n" }, expected: [
+      ["src/routes/_frontend/messages.test.ts", undefined, "messages.test.ts is a test in the routes, but the routes hold no logic and no test. Move it into a frontend context: the code into its layers, with its test, and let the page place the view that uses it."]
+    ] },
+  { rule: "frontend-routes-content", branch: "a stylesheet next to no page", files: { "src/routes/_frontend/messages/messages-page.scss": ".messages-page { color: red; }\n" }, expected: [
+      ["src/routes/_frontend/messages/messages-page.scss", undefined, "messages-page.scss is next to no page or layout, but a stylesheet of the routes is in style/, in component/, or next to its page. Move it to src/routes/_frontend/style/, or next to the page that uses it."]
+    ] },
+  { rule: "frontend-routes-content", branch: "a template out of component/", files: { "src/routes/_frontend/notes/Board.marko": "<p>Board</p>\n" }, expected: [
+      ["src/routes/_frontend/notes/Board.marko", undefined, "notes/Board.marko is a template outside component/, but the routes hold their pages, their layouts, and in component/ the components that only their pages use. Move it to src/routes/_frontend/component/, or into a view of a frontend context."]
+    ] },
+  { rule: "frontend-routes-content", branch: "a document in no folder", files: { "src/routes/_frontend/`sitemap.xml`+handler.ts": "export const GET = () => null;\n" }, expected: [
+      ["src/routes/_frontend/`sitemap.xml`+handler.ts", undefined, "`sitemap.xml`+handler.ts is not the route of a document: such a route is a folder named after its file, with its +handler.ts. Move it to src/routes/_frontend/`sitemap.xml`/+handler.ts."]
+    ] },
+  { rule: "frontend-routes-content", branch: "a document without an extension", files: { "src/routes/_frontend/`notes`/+handler.ts": "export const GET = () => null;\n" }, expected: [
+      ["src/routes/_frontend/`notes`/+handler.ts", undefined, "`notes`/+handler.ts is not the route of a document: such a route is a folder named after its file, with its extension, and holds its +handler.ts. Name the folder after the file that it gives, as `sitemap.xml`/+handler.ts."]
+    ] },
+  { rule: "frontend-routes-content", branch: "a test of a document", files: { "src/routes/_frontend/`notes.xml`/notes.test.ts": "test();\n" }, expected: [
+      ["src/routes/_frontend/`notes.xml`/notes.test.ts", undefined, "`notes.xml`/notes.test.ts is a test in the routes, but the routes hold no logic and no test. Move it into a frontend context: the code into its layers, with its test, and let the page place the view that uses it."]
+    ] },
+  { rule: "backend-routes-content", branch: "a helper", files: { "src/routes/_backend/api/notes/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
+      ["src/routes/_backend/api/notes/helpers.ts", undefined, "helpers.ts is not a +handler.ts, but the backend routes only give the request to a controller. Move its code into a backend context, in a controller or a handler, and let the route import the controller."]
+    ] },
+  { rule: "routes-on-their-side", branch: "a route of the frontend", files: { "src/routes/_frontend/component/Notes.marko": 'import "#backend/notes/command/add-note/add-note.http.controller.js";\n\n<p>Notes</p>\n' }, expected: [
+      ["src/routes/_frontend/component/Notes.marko", 1, "This route of the frontend imports src/backend/notes/command/add-note/add-note.http.controller.js, a file of the backend, but the frontend and the backend are two projects, which talk only through the HTTP API. Place a view of a frontend context instead, which gets its data from the API through its adapter."]
+    ] },
+  { rule: "routes-on-their-side", branch: "a route of the backend", files: { [backendRoute]: `import "#frontend/notes/presentation/view/notes-block/NotesBlock.marko";\n${project[backendRoute]}` }, expected: [
+      ["src/routes/_backend/api/notes/+handler.ts", 1, "This route of the backend imports src/frontend/notes/presentation/view/notes-block/NotesBlock.marko, a file of the frontend, but the frontend and the backend are two projects, which talk only through the HTTP API. Give the request to a controller of a backend context instead."]
+    ] },
+  { rule: "routes-through-presentation", branch: "a file of a use case of the backend", files: { [backendRoute]: 'import "#backend/notes/command/add-note/add-note.dto.js";\n' }, expected: [
+      ["src/routes/_backend/api/notes/+handler.ts", 1, "This route imports src/backend/notes/command/add-note/add-note.dto.js, of the application of notes, but a route reaches a context only through its presentation. Import the controller of the use case, AddNoteHttpController (src/backend/notes/command/add-note/add-note.http.controller.ts), and give it the request: `controller(AddNoteHttpController).handle(ctx.request)`."]
+    ] },
+  { rule: "routes-through-presentation", branch: "the domain of the backend", files: { [backendRoute]: 'import "#backend/notes/domain/entity/Note.js";\n' }, expected: [
+      ["src/routes/_backend/api/notes/+handler.ts", 1, "This route imports src/backend/notes/domain/entity/Note.js, of the domain of notes, but a route reaches a context only through its presentation. Import the controller of the use case, and give it the request: `controller(SomethingController).handle(ctx.request)`."]
+    ] },
+  { rule: "routes-through-presentation", branch: "a route of the frontend", files: { "src/routes/_frontend/+page.marko": 'import "#frontend/notes/query/list-notes/list-notes.dto.js";\n\n<main/>\n' }, expected: [
+      ["src/routes/_frontend/+page.marko", 1, "This route imports src/frontend/notes/query/list-notes/list-notes.dto.js, of the application of notes, but a route reaches a context only through its presentation. Place a view of src/frontend/notes/presentation/view/ instead."]
+    ] },
+  { rule: "routes-take-no-frontend", branch: "a page", files: { "src/routes/_frontend/+page.marko": '<button onClick() { frontendOf($global, "notes"); }>Charger</button>\n' }, expected: [
+      ["src/routes/_frontend/+page.marko", 1, "This route takes the frontend of notes, but a route only places views. Move the code into a view of src/frontend/notes/presentation/view/, which takes its frontend with frontendOf, and place the view in the page."]
+    ] },
+
+  { rule: "production-imports-no-test-environment", branch: "a handler", files: { [handler]: 'import "#context/test.di.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This file imports src/backend/notes/test.di.js, the test environment of notes, but test.di.ts replaces dependencies in the tests only. Remove the import, and bind what the production code needs in src/backend/notes/di.ts."]
+    ] },
+  { rule: "production-imports-no-test-support", branch: "an adapter", files: { [backendAdapter]: `import "@ingenioz-it/caits/testing/backend/infra";\n${project[backendAdapter]}` }, expected: [
+      ["src/backend/notes/infra/note-repository/in-memory-note-repository.ts", 1, "This file imports @ingenioz-it/caits/testing/backend/infra, the test support of the kernel, but the production code never uses the tools of the tests. Move the code that needs it into a test."]
+    ] },
+  { rule: "production-imports-only-src", branch: "a file of test/", files: { [handler]: 'import "../../../../../test/support/notes.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This file imports test/support/notes.js, outside src, but the production code imports nothing outside src: test/ and quality/ are not part of the app. Move what it needs into src/backend/notes."]
+    ] },
+  { rule: "production-imports-only-src", branch: "a file of another folder", files: { [handler]: 'import "../../../../../scripts/notes.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This file imports scripts/notes.js, outside src, but the production code imports nothing outside src: that folder is not part of the app. Move what it needs into src/backend/notes."]
+    ] },
+  {
+    rule: "production-imports-only-src", branch: "the kernel by its path",
+    files: { [handler]: 'import "../../../../../node_modules/@ingenioz-it/caits/src/di/Container.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This file imports node_modules/@ingenioz-it/caits/src/di/Container.js, a file of the kernel, by its path. Import it by its name, @ingenioz-it/caits/di/Container."]
+    ]
+  },
+  {
+    rule: "production-imports-only-src", branch: "a route",
+    files: { [backendRoute]: `import "../../../../../test/support/notes.js";\n${project[backendRoute]}` }, expected: [
+      ["src/routes/_backend/api/notes/+handler.ts", 1, "This file imports test/support/notes.js, outside src, but the production code imports nothing outside src: test/ and quality/ are not part of the app. Move what it needs into src."]
+    ]
+  },
+
+  { rule: "exceptions-in-quality", branch: "a comment of ESLint", files: { [handler]: "\n// eslint-disable-next-line @typescript-eslint/no-explicit-any\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 2, "This comment turns off a check, `eslint-disable-next-line @typescript-eslint/no-explicit-any`, so the exception hides in the code. Fix the code, or turn the rule off for this file only in quality/eslint.config.js."]
+    ] },
+  { rule: "exceptions-in-quality", branch: "a comment of TypeScript", files: { [handler]: "// @ts-ignore\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This comment turns off a check, `@ts-ignore`, so the exception hides in the code. Fix the type."]
+    ] },
+  { rule: "exceptions-in-quality", branch: "a comment of the coverage", files: { [handler]: "/* v8 ignore next */\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This comment turns off a check, `v8 ignore next`, so the exception hides in the code. Test these lines, or leave this file out of the coverage in quality/vite.config.ts."]
+    ] },
+  { rule: "exceptions-in-quality", branch: "a comment of Stryker", files: { [handler]: "// Stryker disable next-line all\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "This comment turns off a check, `Stryker disable next-line all`, so the exception hides in the code. Kill the mutant with a test, or leave this file out of the mutants in quality/stryker.config.mjs."]
+    ] },
+  { rule: "exceptions-in-quality", branch: "a test that does not run", files: { "src/backend/notes/command/add-note/add-note.application.test.ts": "test(() => {});\ntest.skip(() => {});\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.application.test.ts", 2, "`test.skip` keeps the test from running, but every test runs, every time, and passes. Remove .skip, and fix the test or the code."]
+    ] },
+  { rule: "exceptions-in-quality", branch: "a test that runs alone", files: { "src/backend/notes/command/add-note/add-note.application.test.ts": "test.only(() => {});\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.application.test.ts", 1, "`test.only` keeps the other tests from running, but every test runs, every time, and passes. Remove .only."]
+    ] },
+  { rule: "exceptions-in-quality", branch: "a test that may fail", files: { "src/backend/notes/command/add-note/add-note.application.test.ts": "test.fails(() => {});\n" }, expected: [
+      ["src/backend/notes/command/add-note/add-note.application.test.ts", 1, "`test.fails` lets the test pass when it fails, but every test runs, every time, and passes. Remove .fails, and fix the test or the code."]
+    ] }
+];
+
+describe("the messages of the rules", () => {
+  test.for(messages)("$rule: $branch", ({ rule, files, packages, expected }) => {
+    expect(checkWith(files, packages).filter(violation => violation.rule === rule).map(({ file, line, message }) => [file, line, message])).toEqual(expected);
+  });
+
+  test("each rule has its messages", () => {
+    expect(new Set(messages.map(({ rule }) => rule))).toEqual(new Set(rules.map(({ name }) => name)));
+  });
+});
+
+describe("the engine", () => {
+  const sources = [{ path: "src/backend/notes/domain/entity/Note.ts", text: 'import "uuid";\n\nimport "#context/domain/error/InvalidNoteError.js";\nexport class Note {}\n' }];
+  const name = "under-test";
+  const description = "The rule of a test.";
+
+  test("a check gives a message, a message at a line, or a list of both", () => {
+    /** @type {Rule} */
+    const rule = { name, description, on: "file", check: () => ["It is wrong.", { line: 4, message: "It is wrong here." }] };
+
+    expect(checkArchitecture(ROOT, sources, [rule]).violations).toEqual([
+      { rule: name, file: "src/backend/notes/domain/entity/Note.ts", message: "It is wrong." },
+      { rule: name, file: "src/backend/notes/domain/entity/Note.ts", message: "It is wrong here.", line: 4 }
+    ]);
+  });
+
+  test("the message of a rule on the imports is at the line of the import, unless it gives its own", () => {
+    /** @type {Rule} */
+    const located = { name, description, on: "import", check: ({ specifier }) => specifier === "uuid" ? "It is wrong." : { line: 1, message: "It is wrong there." } };
+    /** @type {Rule} */
+    const lineless = { name, description, on: "import", check: () => ({ message: "It is wrong." }) };
+
+    expect(checkArchitecture(ROOT, sources, [located]).violations.map(({ message, line }) => [message, line])).toEqual([["It is wrong.", 1], ["It is wrong there.", 1]]);
+    expect(checkArchitecture(ROOT, sources, [lineless]).violations.map(({ line }) => line)).toEqual([1, 3]);
+  });
+
+  test("a rule on the imports reads the project, as a rule on the files does", () => {
+    /** @type {Rule} */
+    const rule = { name, description, on: "import", check: ({ internal }, { paths, packages }) => internal && `${[...paths].join()} ${JSON.stringify(packages)}` };
+
+    expect(checkArchitecture(ROOT, sources, [rule], { domain: ["uuid"] }).violations.map(({ message }) => message))
+      .toEqual(['src/backend/notes/domain/entity/Note.ts {"domain":["uuid"]}']);
+  });
+
+  test("a rule on the project gives the line of a message, if it has one", () => {
+    /** @type {Rule} */
+    const rule = { name, description, on: "project", check: () => [{ file: "src/a.ts", line: 2, message: "It is wrong." }, { file: "src/b.ts", message: "It is wrong too." }] };
+
+    expect(checkArchitecture(ROOT, sources, [rule]).violations).toEqual([
+      { rule: name, file: "src/a.ts", message: "It is wrong.", line: 2 },
+      { rule: name, file: "src/b.ts", message: "It is wrong too." }
+    ]);
+  });
+
+  test.for(/** @type {[string, unknown, string][]} */ ([
+    ["a key that is no layer", { domian: [] }, " (domian)"],
+    ["a list that is a name", { domain: "uuid" }, " (domain)"],
+    ["a list that holds no name", { domain: [1] }, " (domain)"],
+    ["no object", null, ""],
+    ["a list", [], ""]
+  ]))("refuses packages that are not lists of names, by the key of a layer: %s", ([, packages, which]) => {
+    expect(() => checkArchitecture(ROOT, sources, [], /** @type {Packages} */ (packages)))
+      .toThrow(`quality/imports.mjs must export the packages that each layer may import, as lists of names: { domain: […], application: […], presentation: […], infra: […], di: […], contextMap: […] }${which}`);
   });
 });
 
@@ -468,7 +1410,7 @@ describe("the use cases", () => {
 
   test("the controller is of the presentation: the handler of its use case does not import it", () => {
     expect(violationsWith({ [handler]: 'import "./add-note.http.controller.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' }))
-      .toEqual([["layer-direction", handler]]);
+      .toEqual([["application-imports-no-presentation", handler]]);
   });
 
   test("a use case imports nothing from a use case of the context shared either", () => {
@@ -501,12 +1443,6 @@ describe("the rules on the stylesheets", () => {
     ["@import", `@import "reset", "${theme}";\n`]
   ])("a stylesheet that loads a file with %s follows the rules of the imports", ([, text]) => {
     expect(violationsWith({ [viewStylesheet]: text })).toEqual([["imports-by-shortcut", viewStylesheet], ["contexts-without-routes", viewStylesheet]]);
-  });
-
-  test("tells a stylesheet that goes up a folder to load the files of its folder: Sass has no shortcut", () => {
-    const sources = Object.entries({ ...project, [viewStylesheet]: `@use "${theme}";\n` }).map(([path, text]) => ({ path, text }));
-    const [violation] = checkArchitecture(ROOT, sources, rules).violations;
-    expect(violation.message).toBe(`a stylesheet does not go up a folder: it loads the files of its folder, and a view reads the values of the theme as CSS variables (${theme})`);
   });
 
   test("a View that loads the values of the routes, by the load path of Sass, breaks contexts-without-routes", () => {
@@ -552,7 +1488,7 @@ describe("the routes hold no logic and no test", () => {
     const sources = Object.entries({ ...project, "src/routes/_frontend/component/notes.ts": "export const trim = (text: string) => text.trim();\n" }).map(([path, text]) => ({ path, text }));
     const [violation] = checkArchitecture(ROOT, sources, rules).violations;
     expect(violation.message).toBe(
-      "routes/_frontend holds +page.marko, +layout.marko, in component/ the components of Marko that only its pages use and their stylesheets, in style/ the stylesheets of the app, next to a page or a layout its stylesheet, and in a folder named after its file the route of a document (`sitemap.xml`/+handler.ts): the code that a test reads, and its test, live in a context"
+      "component/notes.ts is code in the routes, but the routes hold no logic and no test. Move it into a frontend context: the code into its layers, with its test, and let the page place the view that uses it."
     );
   });
 });
@@ -598,9 +1534,9 @@ describe("the events of shared in the frontend", () => {
     })).toEqual([["shared-events-in-map", adapter], ["shared-events-in-map", frontendHandler], ["shared-events-in-map", store], ["shared-events-in-map", component]]);
   });
 
-  test("the domain imports no event: only layer-direction says it", () => {
+  test("the domain imports no event: only domain-imports-no-application says it", () => {
     const entity = "src/frontend/notes/domain/entity/Note.ts";
-    expect(violationsWith({ [entity]: `${labelChosen}\nexport class Note {}\n` })).toEqual([["layer-direction", entity]]);
+    expect(violationsWith({ [entity]: `${labelChosen}\nexport class Note {}\n` })).toEqual([["domain-imports-no-application", entity]]);
   });
 
   test("the test of a view may read the events of shared", () => {
@@ -652,7 +1588,7 @@ describe("the events of shared in the backend", () => {
 describe("the context maps of the frontend", () => {
   test("no layer imports the context map: the kernel reads it", () => {
     const view = "src/frontend/notes/presentation/view/notes-count/NotesCount.marko";
-    expect(violationsWith({ [view]: 'import "#context/context-map.js";\n\n<p>Notes</p>\n' })).toEqual([["layer-direction", view]]);
+    expect(violationsWith({ [view]: 'import "#context/context-map.js";\n\n<p>Notes</p>\n' })).toEqual([["context-map-read-by-kernel", view]]);
   });
 
   test("a context map translates between the events of shared and those of its context: it imports no other context", () => {
@@ -675,60 +1611,52 @@ describe("the context maps of the frontend", () => {
   });
 
   test("no layer of the backend imports the context map", () => {
-    expect(violationsWith({ [handler]: 'import "#context/context-map.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' })).toEqual([["layer-direction", handler]]);
+    expect(violationsWith({ [handler]: 'import "#context/context-map.js";\n\nexport class AddNoteHandler { execute() { return new AddNoteOutput(); } }\n' })).toEqual([["context-map-read-by-kernel", handler]]);
   });
 });
 
 describe("the lines of the context maps", () => {
   const frontendMap = "src/frontend/notes/context-map.ts";
-  const backendImports = `import { share, when } from "@ingenioz-it/caits/messaging/ContextMap";
-import { AddNoteCommand } from "#context/command/add-note/add-note.dto.js";
-import { NoteAdded } from "#context/domain/event/NoteAdded.js";
-import { NotePosted } from "#shared/domain/event/NotePosted.js";
-import { UserJoined } from "#shared/domain/event/UserJoined.js";
-`;
-  const backendMapOf = (/** @type {string} */ lines) => ({ [contextMap]: `${backendImports}\nexport default [${lines}];\n` });
-  const messagesOf = (/** @type {Record<string, string>} */ files) => checkArchitecture(ROOT, Object.entries({ ...project, ...files }).map(([path, text]) => ({ path, text })), rules)
-    .violations.map(({ rule, message }) => [rule, message]);
+  const backendMapOf = (/** @type {string} */ lines) => ({ [contextMap]: `${BACKEND_MAP_IMPORTS}\nexport default [${lines}];\n` });
 
   test("a context map lists only its lines, made with the when and the share of the kernel for its side", () => {
-    expect(messagesOf(backendMapOf("when(UserJoined, () => [new AddNoteCommand()]), share(NoteAdded, () => [new NotePosted()]), ...[]"))).toEqual([
-      ["context-map-holds-lines", "a context map lists its lines, each made with when(Event, event => […]) or share(Event, event => […]): ...[]"]
+    expect(messagesWith(backendMapOf("when(UserJoined, () => [new AddNoteCommand()]), share(NoteAdded, () => [new NotePosted()]), ...[]"))).toEqual([
+      ["context-map-holds-lines", "The item `...[]` is not a line: each line of a context map is made with when(…) or share(…). Write it `when(SharedEvent, event => […])` to hear an event of shared, or `share(OwnEvent, event => […])` to share an event of notes."]
     ]);
-    const frontendLines = backendImports.replace("@ingenioz-it/caits/messaging/ContextMap", "@ingenioz-it/caits/messaging/FrontendContextMap");
-    expect(messagesOf({ [contextMap]: `${frontendLines}\nexport default [when(UserJoined, () => [new AddNoteCommand()]), share(NoteAdded, () => [new NotePosted()])];\n` })).toEqual([
-      ["context-map-holds-lines", "a context map of the backend takes share from @ingenioz-it/caits/messaging/ContextMap, not from @ingenioz-it/caits/messaging/FrontendContextMap"],
-      ["context-map-holds-lines", "a context map of the backend takes when from @ingenioz-it/caits/messaging/ContextMap, not from @ingenioz-it/caits/messaging/FrontendContextMap"]
+    const frontendLines = BACKEND_MAP_IMPORTS.replace("@ingenioz-it/caits/messaging/ContextMap", "@ingenioz-it/caits/messaging/FrontendContextMap");
+    expect(messagesWith({ [contextMap]: `${frontendLines}\nexport default [when(UserJoined, () => [new AddNoteCommand()]), share(NoteAdded, () => [new NotePosted()])];\n` })).toEqual([
+      ["context-map-holds-lines", "The context map takes share from @ingenioz-it/caits/messaging/FrontendContextMap, but a context map of the backend takes it from @ingenioz-it/caits/messaging/ContextMap. Import share from @ingenioz-it/caits/messaging/ContextMap."],
+      ["context-map-holds-lines", "The context map takes when from @ingenioz-it/caits/messaging/FrontendContextMap, but a context map of the backend takes it from @ingenioz-it/caits/messaging/ContextMap. Import when from @ingenioz-it/caits/messaging/ContextMap."]
     ]);
   });
 
   test("a context map has one export", () => {
-    expect(messagesOf({ [frontendMap]: `${FRONTEND_MAP_IMPORTS}\nexport const LINES = 2;\nexport default [when(LabelChosen, () => [new NotesRequested()]), share(NoteLabelChosen, () => [new LabelChosen()])];\n` })).toEqual([
-      ["context-map-holds-lines", "a context map has one export, its lines: `export default [when(Event, event => […]), share(Event, event => […])]`"]
+    expect(messagesWith({ [frontendMap]: `${FRONTEND_MAP_IMPORTS}\nexport const LINES = 2;\nexport default [when(LabelChosen, () => [new NotesRequested()]), share(NoteLabelChosen, () => [new LabelChosen()])];\n` })).toEqual([
+      ["context-map-holds-lines", "The context map exports 2 names (LINES, default), but a context map has one export, the list of its lines. Write `export default [when(Event, event => […]), share(Event, event => […])]`, and nothing else."]
     ]);
   });
 
   test("in the backend, share starts from an event of the context and gives events of shared; when starts from an event of shared and gives inputs", () => {
-    expect(messagesOf(backendMapOf("when(NoteAdded, () => [new AddNoteCommand()]), share(NotePosted, () => [new UserJoined()]), share(NoteAdded, () => [new AddNoteCommand()]), when(UserJoined, () => [new NotePosted()])"))).toEqual([
-      ["context-map-line-direction", "when(NoteAdded, …) starts from an event of shared, which comes on the shared bus: NoteAdded is an event of its context, which share(…) shares"],
-      ["context-map-line-direction", "share(NotePosted, …) starts from an event of its context, which a handler publishes: NotePosted is an event of shared, which when(…) hears"],
-      ["context-map-line-direction", "share(…) gives events of shared: AddNoteCommand is not one"],
-      ["context-map-line-direction", "when(…) gives input DTOs of its context: NotePosted is not one"]
+    expect(messagesWith(backendMapOf("when(NoteAdded, () => [new AddNoteCommand()]), share(NotePosted, () => [new UserJoined()]), share(NoteAdded, () => [new AddNoteCommand()]), when(UserJoined, () => [new NotePosted()])"))).toEqual([
+      ["context-map-line-direction", "The line `when(NoteAdded, …)` starts from NoteAdded, an event of notes, but when(…) hears an event of shared, from the shared bus: this line never runs. Write it `share(NoteAdded, …)` to share it, or hear an event of src/backend/shared/domain/event/."],
+      ["context-map-line-direction", "The line `share(NotePosted, …)` starts from NotePosted, an event of shared, but share(…) starts from an event of notes: this line never runs. Write it `when(NotePosted, …)` to react to NotePosted, or start it from an event of src/backend/notes/domain/event/."],
+      ["context-map-line-direction", "The line `share(NoteAdded, …)` gives AddNoteCommand, which is not an event of shared, but share(…) gives events of shared. Give an event of src/backend/shared/domain/event/ instead."],
+      ["context-map-line-direction", "The line `when(UserJoined, …)` gives NotePosted, which is not an input DTO of notes, but when(…) gives what its context reacts to. Give an input DTO of src/backend/notes/command/ or src/backend/notes/query/ instead."]
     ]);
   });
 
   test("in the frontend, when gives the events of the context; a line may build the values of the domain that its events hold", () => {
     const imports = `${FRONTEND_MAP_IMPORTS}import { Label } from "#frontend-shared/domain/value-object/Label.js";\n`;
-    expect(messagesOf({ [frontendMap]: `${imports}\nexport default [when(LabelChosen, () => [new LabelChosen(), new NotesRequested(new Label("a"))]), share(NoteLabelChosen, () => [new LabelChosen()])];\n` })).toEqual([
-      ["context-map-line-direction", "when(…) gives events of its context: LabelChosen is not one"]
+    expect(messagesWith({ [frontendMap]: `${imports}\nexport default [when(LabelChosen, () => [new LabelChosen(), new NotesRequested(new Label("a"))]), share(NoteLabelChosen, () => [new LabelChosen()])];\n` })).toEqual([
+      ["context-map-line-direction", "The line `when(LabelChosen, …)` gives LabelChosen, which is not an event of notes, but when(…) gives what its context reacts to. Give an event of src/frontend/notes/event/ instead."]
     ]);
   });
 
   test("a line whose event is neither of the context nor of shared starts from no event of its kind", () => {
     const imports = `${FRONTEND_MAP_IMPORTS}import { Label } from "#frontend-shared/domain/value-object/Label.js";\n`;
-    expect(messagesOf({ [frontendMap]: `${imports}\nexport default [when(Label, () => []), share(Label, () => [])];\n` })).toEqual([
-      ["context-map-line-direction", "when(Label, …) starts from an event of shared, which comes on the shared bus: Label is not one"],
-      ["context-map-line-direction", "share(Label, …) starts from an event of its context, which a view publishes: Label is not one"]
+    expect(messagesWith({ [frontendMap]: `${imports}\nexport default [when(Label, () => []), share(Label, () => [])];\n` })).toEqual([
+      ["context-map-line-direction", "The line `when(Label, …)` starts from Label, which is not an event of shared: this line never runs. Hear an event of src/frontend/shared/event/."],
+      ["context-map-line-direction", "The line `share(Label, …)` starts from Label, which is not an event of notes: this line never runs. Start it from an event of src/frontend/notes/event/."]
     ]);
   });
 
@@ -746,13 +1674,15 @@ import { ThemeAsked } from "#frontend-shared/event/ThemeAsked.js";
 export default [when(LabelChosen, () => [new AlertShown()]), share(AlertShown, () => [new ThemeAsked()])];
 `
     };
-    expect(messagesOf(files)).toEqual([]);
+    expect(messagesWith(files)).toEqual([]);
 
     const notes = `${FRONTEND_MAP_IMPORTS}import { ThemeAsked } from "#frontend-shared/event/ThemeAsked.js";\n\nexport default [when(ThemeAsked, () => [new NoteLabelChosen()]), share(NoteLabelChosen, () => [new LabelChosen()])];\n`;
     expect(violationsWith({ ...files, [frontendMap]: notes })).toEqual([["context-maps-without-cycle", alertsMap]]);
-    expect(messagesOf({ ...files, [frontendMap]: notes })).toEqual([
-      ["context-maps-without-cycle", "the context maps make a cycle, which the buses would carry without end: AlertShown → ThemeAsked → NoteLabelChosen → LabelChosen → AlertShown"]
-    ]);
+    expect(checkWith({ ...files, [frontendMap]: notes }).map(({ file, line, message }) => [file, line, message])).toEqual([[
+      alertsMap,
+      6,
+      "The context maps of the frontend make a cycle of events, AlertShown → ThemeAsked → NoteLabelChosen → LabelChosen → AlertShown, which the buses would carry without end, and the page would stop. Remove one of its lines: AlertShown → ThemeAsked in src/frontend/alerts/context-map.ts, or ThemeAsked → NoteLabelChosen in src/frontend/notes/context-map.ts, or NoteLabelChosen → LabelChosen in src/frontend/notes/context-map.ts, or LabelChosen → AlertShown in src/frontend/alerts/context-map.ts."
+    ]]);
   });
 
   test("the backend shows no cycle: it goes through a handler", () => {
@@ -770,7 +1700,7 @@ describe("the context shared of the frontend", () => {
     expect(violations.map(({ rule, file, message }) => [rule, file, message])).toEqual([[
       "shared-components-are-tags",
       "src/frontend/marko.json",
-      'the components of the frontend context shared are Marko tags: src/frontend/marko.json gives Marko their folder, { "tags-dir": "./shared/presentation/component" }'
+      'src/frontend/marko.json is missing, so the contexts cannot place them by their tag. Write `{ "tags-dir": "./shared/presentation/component" }` in src/frontend/marko.json.'
     ]]);
   });
 
@@ -780,7 +1710,11 @@ describe("the context shared of the frontend", () => {
     const { violations } = checkArchitecture(other, sources, rules);
     rmSync(other, { recursive: true, force: true });
 
-    expect(violations.map(({ rule, file }) => [rule, file])).toEqual([["shared-components-are-tags", "src/frontend/marko.json"]]);
+    expect(violations.map(({ rule, file, message }) => [rule, file, message])).toEqual([[
+      "shared-components-are-tags",
+      "src/frontend/marko.json",
+      'src/frontend/marko.json does not give Marko the folder of the components of shared, so the contexts cannot place them by their tag. Write `{ "tags-dir": "./shared/presentation/component" }` in src/frontend/marko.json.'
+    ]]);
   });
 
   test("a marko.json that gives the folder of the components among others is enough", () => {
@@ -826,6 +1760,8 @@ describe("the context shared of the frontend", () => {
 
   test("the domain of a context does not import its components: the layers of shared are those of a context", () => {
     const entity = "src/frontend/notes/domain/entity/Note.ts";
-    expect(violationsWith({ [entity]: 'import "#frontend-shared/presentation/component/badge/badge.js";\n\nexport class Note {}\n' })).toEqual([["layer-direction", entity]]);
+    expect(violationsWith({ [entity]: 'import "#frontend-shared/presentation/component/badge/badge.js";\n\nexport class Note {}\n' })).toEqual([["domain-imports-no-presentation", entity]]);
   });
 });
+
+

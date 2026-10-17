@@ -3,10 +3,13 @@
 // The builds of Marko and the starts of Vitest write their files in the build folder: the checks that run at once would empty the
 // folder of each other. Each check gets a folder of its own in CAITS_OUT_DIR, which quality/caits/vite.ts reads. The end-to-end tests
 // build in dist/ all the same: `npm start` runs dist/index.mjs.
+// In a terminal, the report has colors, and so has the output of a check that fails: the checks run with FORCE_COLOR. In a pipe (an AI
+// agent, a log), the report and the checks have none: they run with NO_COLOR.
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { constants } from "node:os";
 import { join } from "node:path";
+import { colors, painterOf } from "./terminal.mjs";
 
 export const OUT_DIRS = "node_modules/.caits/check";
 
@@ -26,16 +29,17 @@ export async function run(args) {
 
 /**
  * Runs each npm script of `scripts` in the project of `root`, all at once, each in a group of processes of its own: the end of the
- * command, or Ctrl+C, stops the servers and the workers that a check starts. `print` gets each line of the report. Gives the exit code:
- * 0 when all the checks pass.
+ * command, or Ctrl+C, stops the servers and the workers that a check starts. `print` gets each line of the report, and `paint` colors
+ * its parts. Gives the exit code: 0 when all the checks pass.
  * @param {string} root
  * @param {string[]} scripts
  * @param {(line: string) => void} [print]
+ * @param {import("./terminal.mjs").Paint} [paint]
  * @returns {Promise<number>}
  */
-export async function check(root, scripts, print = line => console.log(line)) {
+export async function check(root, scripts, print = line => console.log(line), paint = painterOf(process.stdout)) {
   if (scripts.length === 0) {
-    print("Give the npm scripts of the checks: caits check typecheck lint test");
+    print(paint("red", "Give the npm scripts of the checks: caits check typecheck lint test"));
     return 1;
   }
   // npm says nothing of a missing script when it runs silent: the command names them, and runs nothing.
@@ -43,14 +47,14 @@ export async function check(root, scripts, print = line => console.log(line)) {
   const known = existsSync(manifest) ? /** @type {{ scripts?: Record<string, string> }} */ (readJson(manifest)).scripts ?? {} : {};
   const missing = scripts.filter(script => !Object.hasOwn(known, script));
   if (missing.length > 0) {
-    print(`package.json has no script ${missing.join(", ")}.`);
+    print(paint("red", `package.json has no script ${missing.join(", ")}.`));
     return 1;
   }
   const width = Math.max(...scripts.map(script => script.length));
   const started = Date.now();
-  print(`${scripts.length} checks at once: ${scripts.join(", ")}`);
+  print(paint("dim", `${scripts.length} checks at once: ${scripts.join(", ")}`));
 
-  const steps = scripts.map(script => start(root, script));
+  const steps = scripts.map(script => start(root, script, colors(paint)));
   const stop = () => { for (const step of steps) step.stop(); };
   /** @param {NodeJS.Signals} signal Ctrl+C (SIGINT) exits with 130, SIGTERM with 143, as a shell tells a command that a signal stops. */
   const interrupt = signal => { stop(); process.exit(128 + constants.signals[signal]); };
@@ -59,15 +63,15 @@ export async function check(root, scripts, print = line => console.log(line)) {
   try {
     const results = await Promise.all(steps.map(async step => {
       const result = await step.done;
-      print(`${result.passed ? "✓" : "✗"} ${step.script.padEnd(width)}  ${durationOf(result.duration)}`);
+      print(`${result.passed ? paint("green", "✓") : paint("red", "✗")} ${step.script.padEnd(width)}  ${paint("dim", durationOf(result.duration))}`);
       return { script: step.script, ...result };
     }));
     const failed = results.filter(result => !result.passed);
-    for (const { script, output } of failed) print(`\n── ${script} ──\n${output.trimEnd()}`);
+    for (const { script, output } of failed) print(`\n${paint("bold", `── ${script} ──`)}\n${output.trimEnd()}`);
     const total = durationOf(Date.now() - started);
     print(failed.length === 0
-      ? `\nAll ${results.length} checks passed in ${total}.`
-      : `\n${failed.length} of ${results.length} checks failed: ${failed.map(({ script }) => script).join(", ")}.`);
+      ? `\n${paint(["green", "bold"], `All ${results.length} checks passed in ${total}.`)}`
+      : `\n${paint(["red", "bold"], `${failed.length} of ${results.length} checks failed: ${failed.map(({ script }) => script).join(", ")}.`)}`);
     return failed.length === 0 ? 0 : 1;
   } finally {
     process.off("SIGINT", interrupt);
@@ -77,13 +81,15 @@ export async function check(root, scripts, print = line => console.log(line)) {
 }
 
 /**
- * Starts `npm run <script>`, with its build folder, and keeps its output.
+ * Starts `npm run <script>`, with its build folder, and keeps its output: with the colors of its tool when the report has colors.
  * @param {string} root
  * @param {string} script
+ * @param {boolean} colored
  */
-function start(root, script) {
+function start(root, script, colored) {
   const began = Date.now();
-  const env = { ...process.env, CAITS_OUT_DIR: join(OUT_DIRS, script.replaceAll(":", "-")) };
+  const { FORCE_COLOR: _force, NO_COLOR: _no, ...rest } = process.env;
+  const env = { ...rest, ...(colored ? { FORCE_COLOR: "1" } : { NO_COLOR: "1" }), CAITS_OUT_DIR: join(OUT_DIRS, script.replaceAll(":", "-")) };
   const child = spawn("npm", ["run", "--silent", script], { cwd: root, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.on("data", chunk => { output += chunk; });

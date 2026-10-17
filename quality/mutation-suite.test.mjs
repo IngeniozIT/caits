@@ -77,6 +77,12 @@ describe("caits mutation-suite", () => {
     expect(output).toContain(`${NOT_RUN}: Vitest stopped before them`);
   }, 60_000);
 
+  test("in a terminal, says it in red", async () => {
+    const { output } = await runSuite(newSandbox({ "quality/vite.config.ts": BREAKS, "test/a.test.ts": PASSES }), { FORCE_COLOR: "1" });
+
+    expect(output).toContain(`\u001b[31m${NOT_RUN}: Vitest stopped before them`);
+  }, 60_000);
+
   test("removes the copies of the suites that Stryker stopped with SIGKILL, and only theirs", async () => {
     const temporary = mkdtempSync(join(tmpdir(), "caits-tmp-"));
     folders.push(temporary);

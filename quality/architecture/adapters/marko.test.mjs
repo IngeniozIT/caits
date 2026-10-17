@@ -31,6 +31,15 @@ describe("readMarko", () => {
       .toEqual([" a view", " at most", " the end ", " the max "].sort());
   });
 
+  test("gives the line of each import, of each tag that Marko finds, and of each comment", () => {
+    const file = join(root, "src/frontend/notes/presentation/view/notes-block/NotesBlock.marko");
+    const { imports, comments, lines } = readMarko(file, 'import Text from "#context/presentation/component/text/Text.marko";\n\n<p>Notes</p>\n<!-- a badge -->\n<badge/>\n<badge/>\n', root);
+
+    expect(imports.map((specifier, index) => [specifier, lines.imports[index]]))
+      .toEqual([["#context/presentation/component/text/Text.marko", 1], ["/src/frontend/shared/presentation/component/badge/index.marko", 5]]);
+    expect(comments.map((comment, index) => [comment, lines.comments[index]])).toEqual([[" a badge ", 4]]);
+  });
+
   test("a tag of the template itself, or one that Marko does not know, counts as no import", () => {
     const file = join(root, "src/frontend/shared/presentation/component/badge/index.marko");
 

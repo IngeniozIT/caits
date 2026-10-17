@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { constants, tmpdir } from "node:os";
 import { join } from "node:path";
+import { painterOf } from "./terminal.mjs";
 
 const ENTRIES = ["src", "test", "quality", "dist", ".marko-run", "package.json", "tsconfig.json"];
 
@@ -49,7 +50,7 @@ export async function run(args) {
   const ran = existsSync(join(copy, REPORT));
   remove();
   // Vitest stopped before the tests, on an error of its own or of the system: no test failed, and the mutant is not tested.
-  if (status !== 0 && !ran) console.error(`${NOT_RUN}: Vitest stopped before them (exit ${status}). The mutant is not tested.`);
+  if (status !== 0 && !ran) console.error(painterOf(process.stderr)("red", `${NOT_RUN}: Vitest stopped before them (exit ${status}). The mutant is not tested.`));
   return status;
 }
 

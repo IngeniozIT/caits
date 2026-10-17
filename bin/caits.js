@@ -3,6 +3,7 @@
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { commandOf, painterOf } from "../quality/terminal.mjs";
 import { defaultsVersions, DEFAULTS_FOLDER, EXAMPLE_SOURCE, init, install, otherVersions, SOURCE, update, VERSION } from "./init.js";
 
 const USAGE = `Usage: caits <command>
@@ -46,6 +47,10 @@ const count = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 /** A folder as the shell reads it: in quotes when it has a space or another special character. */
 const shellQuote = (/** @type {string} */ text) => /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", "'\\''")}'`;
 
+/** The painters of the output and of the errors: they color in a terminal only. */
+const paint = painterOf(process.stdout);
+const paintError = painterOf(process.stderr);
+
 const [command, ...rest] = process.argv.slice(2);
 
 try {
@@ -53,8 +58,8 @@ try {
   if (typeof status === "number") process.exitCode = status;
 } catch (error) {
   // A known problem has a message that tells what to do: the stack of the code of CAITS does not help.
-  console.error(error instanceof Error ? error.message : error);
-  if (error instanceof UsageError) console.error("Run `caits --help`.");
+  console.error(paintError("red", String(error instanceof Error ? error.message : error)));
+  if (error instanceof UsageError) console.error(paintError("dim", "Run `caits --help`."));
   process.exitCode = 1;
 }
 
@@ -125,7 +130,7 @@ function runInit(args) {
   const options = /** @type {{ caits?: string; example?: boolean; "example-source"?: string; "no-install"?: boolean }} */ (values);
   if (positionals.length > 1) throw new UsageError(`init takes one folder, not ${positionals.length}: ${positionals.join(" ")}.`);
   if (positionals.length === 0 && !existsSync("package.json")) {
-    console.error("This folder has no package.json. Give the folder of the new project (`caits init my-app`), or `caits init .` to use this folder.");
+    console.error(paintError("red", "This folder has no package.json. Give the folder of the new project (`caits init my-app`), or `caits init .` to use this folder."));
     return 1;
   }
   const root = resolve(positionals[0] ?? ".");
@@ -134,7 +139,7 @@ function runInit(args) {
   console.log(`CAITS ${VERSION}: ${root}\n`);
   if (example) console.log(`The example: ${example}\n`);
   const { written, kept, ignored, values: keptValues } = init(root, options.caits, { example });
-  console.log(`Wrote ${count(written.length, "file")}. CAITS owns those of ${DEFAULTS_FOLDER}/: the others are yours.`);
+  console.log(paint("green", `Wrote ${count(written.length, "file")}. CAITS owns those of ${DEFAULTS_FOLDER}/: the others are yours.`));
   if (kept.length > 0) {
     console.log(`Kept ${count(kept.length, "file")} that the project has already: ${kept.join(", ")}.`);
     console.log("  Compare them with those of node_modules/@ingenioz-it/caits/template/project/ (without the dot at the start of the name).");
@@ -148,11 +153,11 @@ function runInit(args) {
   const cd = relative(process.cwd(), root);
   const steps = [...(cd ? [`cd ${shellQuote(cd)}`] : []), ...(withInstall ? [] : ["npm install", "npx playwright install chromium"])];
   if (withInstall && !install(root)) {
-    console.error("\nThe installation failed. Correct the problem, then run the same command again: it keeps the files that it wrote.");
+    console.error(`\n${paintError("red", "The installation failed. Correct the problem, then run the same command again: it keeps the files that it wrote.")}`);
     return 1;
   }
-  console.log("\nNext:");
-  for (const step of [...steps, "npm run dev      starts the app on http://localhost:3000", "npm run check    runs all the checks"]) console.log(`  ${step}`);
+  console.log(`\n${paint("bold", "Next:")}`);
+  for (const step of [...steps, "npm run dev      starts the app on http://localhost:3000", "npm run check    runs all the checks"]) console.log(`  ${commandOf(step, paint)}`);
   return 0;
 }
 
@@ -164,7 +169,7 @@ function runInit(args) {
 function runUpdate(args) {
   if (args.length > 0) throw new UsageError(`update takes no argument: ${args.join(" ")}.`);
   const written = update(process.cwd());
-  console.log(`CAITS ${VERSION}: wrote ${count(written.length, "file")} in ${DEFAULTS_FOLDER}/.`);
+  console.log(paint("green", `CAITS ${VERSION}: wrote ${count(written.length, "file")} in ${DEFAULTS_FOLDER}/.`));
   printOtherVersions(process.cwd());
   return 0;
 }
@@ -173,7 +178,7 @@ function runUpdate(args) {
 function printOtherVersions(root) {
   const others = otherVersions(root);
   if (others.length === 0) return;
-  console.log(`CAITS ${VERSION} suggests other versions of these packages. Change them in package.json if you agree:`);
+  console.log(paint("yellow", `CAITS ${VERSION} suggests other versions of these packages. Change them in package.json if you agree:`));
   for (const { key, project, caits } of others) console.log(`  ${key}: ${JSON.stringify(project)} (CAITS suggests ${JSON.stringify(caits)})`);
 }
 
@@ -182,5 +187,5 @@ function warnOfOldDefaults(root) {
   const versions = defaultsVersions(root);
   if (versions.length === 1 && versions[0] === VERSION) return;
   const from = versions.length === 0 ? "is missing" : `comes from CAITS ${versions.join(", ")}`;
-  console.warn(`Warning: ${DEFAULTS_FOLDER}/ ${from}, but CAITS ${VERSION} is installed. Run \`npx caits update\`.\n`);
+  console.warn(`${paintError("yellow", "Warning:")} ${DEFAULTS_FOLDER}/ ${from}, but CAITS ${VERSION} is installed. Run \`npx caits update\`.\n`);
 }

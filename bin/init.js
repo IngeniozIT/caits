@@ -4,6 +4,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readd
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { painterOf } from "../quality/terminal.mjs";
 
 /** @typedef {{ [key: string]: unknown }} PackageJson */
 /** @typedef {{ [name: string]: string }} Section */
@@ -269,7 +270,7 @@ export function install(root) {
 function run(command, args, cwd) {
   console.log(`\n> ${[command, ...args].join(" ")}`);
   const result = spawnSync(command, args, { cwd, stdio: "inherit" });
-  if (result.error) console.error(`${notStarted(command, result.error)}.`);
+  if (result.error) console.error(painterOf(process.stderr)("red", `${notStarted(command, result.error)}.`));
   return result.status === 0;
 }
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { check } from "./check.mjs";
+import { plain } from "./terminal.mjs";
 
 /** A check that waits for the file of another one: it passes only when the two run at the same time. @type {(other: string) => string} */
 const waitsFor = other => `import { existsSync, writeFileSync } from "node:fs";
@@ -19,7 +20,8 @@ const FILES = {
   "passes.mjs": "console.log(\"the output of a check that passes\");\n",
   "fails.mjs": "console.log(\"the output of a check that fails\");\nprocess.exit(1);\n",
   "out-dir.mjs": "import { writeFileSync } from \"node:fs\";\nwriteFileSync(process.argv[2], process.env.CAITS_OUT_DIR ?? \"\");\n",
-  "waits.mjs": "import { writeFileSync } from \"node:fs\";\nwriteFileSync(\"waits.pid\", String(process.pid));\nsetTimeout(() => {}, 60_000);\n"
+  "waits.mjs": "import { writeFileSync } from \"node:fs\";\nwriteFileSync(\"waits.pid\", String(process.pid));\nsetTimeout(() => {}, 60_000);\n",
+  "colors.mjs": "import { writeFileSync } from \"node:fs\";\nwriteFileSync(process.argv[2], `${process.env.FORCE_COLOR ?? \"\"}|${process.env.NO_COLOR ?? \"\"}`);\n"
 };
 
 const SCRIPTS = {
@@ -29,7 +31,8 @@ const SCRIPTS = {
   fails: "node fails.mjs",
   "test:unit": "node out-dir.mjs unit.out",
   "test:e2e": "node out-dir.mjs e2e.out",
-  waits: "node waits.mjs"
+  waits: "node waits.mjs",
+  colors: "node colors.mjs colors.out"
 };
 
 /** @type {string[]} */
@@ -44,14 +47,18 @@ function newProject() {
   return root;
 }
 
+/** A painter that marks each style in the text, as a terminal colors it: `<red bold>…</>`. @type {import("./terminal.mjs").Paint} */
+const marks = (style, text) => `<${[style].flat().join(" ")}>${text}</>`;
+
 /**
  * @param {string} root
  * @param {string[]} scripts
+ * @param {import("./terminal.mjs").Paint} [paint] without colors, by default
  */
-async function checkOf(root, scripts) {
+async function checkOf(root, scripts, paint = plain) {
   /** @type {string[]} */
   const lines = [];
-  const status = await check(root, scripts, line => lines.push(line));
+  const status = await check(root, scripts, line => lines.push(line), paint);
   return { status, report: lines.join("\n") };
 }
 
@@ -118,4 +125,46 @@ describe("caits check", () => {
     expect(status).toBe(1);
     expect(report).toBe("Give the npm scripts of the checks: caits check typecheck lint test");
   });
+
+  describe("in a terminal", () => {
+    test("colors the report: the checks dim, each mark, each duration dim, the header of a failed check bold, and the end", async () => {
+      const { report } = await checkOf(newProject(), ["passes", "fails"], marks);
+
+      expect(report).toMatch(/^<dim>2 checks at once: passes, fails<\/>$/m);
+      expect(report).toMatch(/^<green>✓<\/> passes {2}<dim>\d+s<\/>$/m);
+      expect(report).toMatch(/^<red>✗<\/> fails {3}<dim>\d+s<\/>$/m);
+      expect(report).toContain("<bold>── fails ──</>\nthe output of a check that fails");
+      expect(report).toMatch(/\n<red bold>1 of 2 checks failed: fails\.<\/>$/);
+    }, 30_000);
+
+    test("ends in green when every check passes", async () => {
+      const { report } = await checkOf(newProject(), ["passes"], marks);
+
+      expect(report).toMatch(/\n<green bold>All 1 checks passed in \d+s\.<\/>$/);
+    }, 30_000);
+
+    /** @type {[string[], string][]} */
+    const errors = [[[], "Give the npm scripts of the checks: caits check typecheck lint test"], [["missing"], "package.json has no script missing."]];
+    test.for(errors)("colors in red the error %j", async ([scripts, error]) => {
+      const { report } = await checkOf(newProject(), scripts, marks);
+
+      expect(report).toBe(`<red>${error}</>`);
+    });
+
+    test("runs the checks with FORCE_COLOR, so that the output of a check that fails keeps the colors of its tool", async () => {
+      const root = newProject();
+
+      await checkOf(root, ["colors"], marks);
+
+      expect(readFileSync(join(root, "colors.out"), "utf8")).toBe("1|");
+    }, 30_000);
+  });
+
+  test("in a pipe, runs the checks with NO_COLOR: an AI agent reads no code of color", async () => {
+    const root = newProject();
+
+    await checkOf(root, ["colors"]);
+
+    expect(readFileSync(join(root, "colors.out"), "utf8")).toBe("|1");
+  }, 30_000);
 });

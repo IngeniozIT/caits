@@ -16,11 +16,25 @@ function newFolder(): string {
   return folder;
 }
 
-/** Runs the command of CAITS in a folder: its exit code, and what it prints. */
-function caits(cwd: string, ...args: string[]) {
-  const { status, stdout, stderr } = spawnSync(process.execPath, [CAITS, ...args], { cwd, encoding: "utf8" });
+/** Runs the command of CAITS in a folder, without colors or with those of a terminal: its exit code, and what it prints. */
+function run(colored: boolean, cwd: string, args: string[]) {
+  const { FORCE_COLOR: _force, NO_COLOR: _no, ...env } = process.env;
+  const { status, stdout, stderr } = spawnSync(process.execPath, [CAITS, ...args], { cwd, env: { ...env, ...(colored ? { FORCE_COLOR: "1" } : { NO_COLOR: "1" }) }, encoding: "utf8" });
   return { status, stdout, stderr };
 }
+
+/** Runs the command of CAITS in a folder, as in a pipe: without colors. */
+const caits = (cwd: string, ...args: string[]) => run(false, cwd, args);
+
+/** Runs the command of CAITS in a folder, as in a terminal: with colors. */
+const caitsInColor = (cwd: string, ...args: string[]) => run(true, cwd, args);
+
+const red = (text: string) => `\u001b[31m${text}\u001b[39m`;
+const green = (text: string) => `\u001b[32m${text}\u001b[39m`;
+const yellow = (text: string) => `\u001b[33m${text}\u001b[39m`;
+const cyan = (text: string) => `\u001b[36m${text}\u001b[39m`;
+const bold = (text: string) => `\u001b[1m${text}\u001b[22m`;
+const dim = (text: string) => `\u001b[2m${text}\u001b[22m`;
 
 describe("the command caits", () => {
   test("--version gives the version of CAITS", () => {
@@ -102,8 +116,97 @@ describe("the command caits", () => {
     const { status, stderr } = caits(folder, "architecture");
 
     expect(status).toBe(1);
-    expect(stderr).toContain(`f0: wrong (always-wrong)\n`);
+    expect(stderr).toContain(`f0 [always-wrong] wrong\n`);
     expect(stderr).toMatch(new RegExp(`\\n${total}\\n$`));
+  });
+
+  test("architecture: prints each violation at its line, when the rule points at one", () => {
+    const folder = newFolder();
+    mkdirSync(join(folder, "quality"));
+    const rule = `{ name: "always-wrong", description: "Fails.", on: "project", check: () => [{ file: "src/a.ts", line: 3, message: "It is wrong. Fix it." }, { file: "src/b.ts", message: "It is wrong too." }] }`;
+    writeFileSync(join(folder, "quality/architecture.mjs"), `export default [${rule}];\n`);
+
+    const { stderr } = caits(folder, "architecture");
+
+    expect(stderr.endsWith("src/a.ts:3 [always-wrong] It is wrong. Fix it.\nsrc/b.ts [always-wrong] It is wrong too.\n\n2 architecture violations.\n")).toBe(true);
+  });
+
+  describe("in a terminal, with colors", () => {
+    test("an error in red, and where to read the usage dim", () => {
+      expect(caitsInColor(newFolder(), "deploy").stderr).toBe(`${red("Unknown command: deploy.")}\n${dim("Run `caits --help`.")}\n`);
+    });
+
+    test("architecture: the file and its line in cyan, the rule dim, the message as it is, and the count in red", () => {
+      const folder = newFolder();
+      mkdirSync(join(folder, "quality"));
+      const rule = `{ name: "always-wrong", description: "Fails.", on: "project", check: () => [{ file: "src/a.ts", line: 3, message: "It is wrong. Fix it." }] }`;
+      writeFileSync(join(folder, "quality/architecture.mjs"), `export default [${rule}];\n`);
+
+      const { stderr } = caitsInColor(folder, "architecture");
+
+      expect(stderr.endsWith(`${cyan("src/a.ts:3")} ${dim("[always-wrong]")} It is wrong. Fix it.\n\n${red(bold("1 architecture violation."))}\n`)).toBe(true);
+    });
+
+    test("architecture: the project that respects every rule in green, and the warning of old defaults in yellow", () => {
+      const folder = newFolder();
+      mkdirSync(join(folder, "quality"));
+      writeFileSync(join(folder, "quality/architecture.mjs"), "export default [];\n");
+
+      const { stdout, stderr } = caitsInColor(folder, "architecture");
+
+      expect(stdout).toBe(`${green("Architecture: 0 production files and 0 test files respect the 0 rules.")}\n`);
+      expect(stderr).toBe(`${yellow("Warning:")} quality/caits/ is missing, but CAITS ${VERSION} is installed. Run \`npx caits update\`.\n\n`);
+    });
+
+    test("init: the files that it wrote in green, Next in bold, and the command of each step in cyan", () => {
+      const { stdout } = caitsInColor(newFolder(), "init", "My App", "--no-install");
+
+      expect(stdout).toMatch(new RegExp(`\\n${green("Wrote \\d+ files\\. CAITS owns those of quality/caits/: the others are yours\\.").replaceAll("[", "\\[")}\\n`));
+      expect(stdout).toContain(`\n${bold("Next:")}\n  ${cyan("cd 'My App'")}\n  ${cyan("npm install")}\n  ${cyan("npx playwright install chromium")}\n  ${cyan("npm run dev")}      starts the app on http://localhost:3000\n`);
+    });
+
+    test("update: the files that it wrote in green, and the other versions that CAITS suggests in yellow", () => {
+      const folder = newFolder();
+      writeFileSync(join(folder, "package.json"), JSON.stringify({ devDependencies: { vitest: "^1.0.0" } }));
+
+      const { stdout } = caitsInColor(folder, "update");
+
+      expect(stdout).toMatch(new RegExp(`^${green(`CAITS ${VERSION}: wrote \\d+ files in quality/caits/\\.`).replaceAll("[", "\\[")}\\n`));
+      expect(stdout).toContain(`${yellow(`CAITS ${VERSION} suggests other versions of these packages. Change them in package.json if you agree:`)}\n  vitest: "^1.0.0"`);
+    });
+  });
+
+  describe("architecture: the packages that each layer may import", () => {
+    /** A project whose one rule says the packages that it reads. */
+    function projectWithPackages(files: Record<string, string>) {
+      const folder = newFolder();
+      mkdirSync(join(folder, "quality/caits"), { recursive: true });
+      const rule = `{ name: "packages", description: "Says the packages.", on: "project", check: ({ packages }) => [{ file: "quality", message: JSON.stringify(packages) }] }`;
+      writeFileSync(join(folder, "quality/architecture.mjs"), `export default [${rule}];\n`);
+      for (const [path, text] of Object.entries(files)) writeFileSync(join(folder, path), text);
+      return caits(folder, "architecture").stderr;
+    }
+
+    test("are those of quality/imports.mjs, the file of the project", () => {
+      expect(projectWithPackages({
+        "quality/imports.mjs": 'export default { domain: ["uuid"] };\n',
+        "quality/caits/imports.mjs": 'export const allowed = { domain: [] };\n'
+      })).toContain('quality [packages] {"domain":["uuid"]}\n');
+    });
+
+    test("are those of CAITS, quality/caits/imports.mjs, when the project has none", () => {
+      expect(projectWithPackages({ "quality/caits/imports.mjs": 'export const allowed = { domain: ["@ingenioz-it/caits/Token"] };\n' }))
+        .toContain('quality [packages] {"domain":["@ingenioz-it/caits/Token"]}\n');
+    });
+
+    test("are none without either file: every layer imports any package", () => {
+      expect(projectWithPackages({})).toContain("quality [packages] {}\n");
+    });
+
+    test("are lists of names, by the key of a layer", () => {
+      expect(projectWithPackages({ "quality/imports.mjs": 'export default { domian: ["uuid"] };\n' }))
+        .toContain("quality/imports.mjs must export the packages that each layer may import, as lists of names: { domain: […], application: […], presentation: […], infra: […], di: […], contextMap: […] } (domian)");
+    });
   });
 
   describe("mutation: Stryker, then the score of each file and the survivors, also when Stryker fails", () => {

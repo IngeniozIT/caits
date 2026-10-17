@@ -52,7 +52,16 @@ describe("the reading of a stylesheet", () => {
   test("gives no other fact but its comments: a stylesheet has no code", () => {
     expect(readScss(STYLESHEET, "/* the links */\n.a { color: red; } // red\n", new Set())).toEqual({
       imports: [], imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [],
-      comments: [" the links ", " red"]
+      comments: [" the links ", " red"],
+      lines: { imports: [], constructed: [], objectTypes: [], tags: [], comments: [1, 2] }
     });
+  });
+
+  test("gives the line of each file that it loads, and of each comment: a comment of several lines keeps the lines after it", () => {
+    const text = '/* the theme,\n   then the rest */\n@use "sass:math";\n// the old ones\n@import "a.css",\n  "b.css";\n@forward "c";\n';
+    const { imports, comments, lines } = readScss(STYLESHEET, text, new Set());
+
+    expect(imports.map((specifier, index) => [specifier, lines.imports[index]])).toEqual([["sass:math", 3], ["a.css", 5], ["b.css", 6], ["c", 7]]);
+    expect(comments.map((comment, index) => [comment, lines.comments[index]])).toEqual([[" the theme,\n   then the rest ", 1], [" the old ones", 4]]);
   });
 });

@@ -33,7 +33,7 @@ function newExample(page = "<h1>Example</h1>"): string {
   return example;
 }
 
-const DEFAULTS = ["architecture.mjs", "eslint.js", "marko-modules.d.ts", "playwright.ts", "stryker.mjs", "tsconfig.json", "tsconfig.mutation.json", "vite.ts"].map(file => `quality/caits/${file}`);
+const DEFAULTS = ["architecture.mjs", "eslint.js", "imports.mjs", "marko-modules.d.ts", "playwright.ts", "stryker.mjs", "tsconfig.json", "tsconfig.mutation.json", "vite.ts"].map(file => `quality/caits/${file}`);
 
 describe("init", () => {
   test("makes a project in a new folder: the files of the project (AGENTS.md for the AI agents), the defaults of CAITS, the folders of the contexts and package.json", () => {
@@ -42,7 +42,7 @@ describe("init", () => {
     const report = init(root, "github:owner/caits#v9");
 
     expect(report.written).toEqual(expect.arrayContaining([
-      ".gitignore", ".nvmrc", "AGENTS.md", "tsconfig.json", "quality/architecture.mjs", "quality/eslint.config.js", "quality/vite.config.ts", "src/routes/_frontend/+page.marko", "test/e2e/home.spec.ts", ...DEFAULTS
+      ".gitignore", ".nvmrc", "AGENTS.md", "tsconfig.json", "quality/architecture.mjs", "quality/eslint.config.js", "quality/imports.mjs", "quality/vite.config.ts", "src/routes/_frontend/+page.marko", "test/e2e/home.spec.ts", ...DEFAULTS
     ]));
     expect(report).toMatchObject({ kept: [], ignored: [], values: [] });
     expect(existsSync(join(root, "src/backend"))).toBe(true);
@@ -194,20 +194,36 @@ describe("init", () => {
 });
 
 describe("install", () => {
-  test("without npm, fails, and says that npm is missing", () => {
+  /** Runs install without npm, with these variables of color: the errors that it prints. */
+  function errorsWithoutNpm(colors: { FORCE_COLOR?: string; NO_COLOR?: string }) {
     const errors: unknown[] = [];
     const error = vi.spyOn(console, "error").mockImplementation((message: unknown) => { errors.push(message); });
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    const path = process.env.PATH;
+    const { PATH: path, FORCE_COLOR: force, NO_COLOR: no } = process.env;
     process.env.PATH = newFolder();
+    delete process.env.FORCE_COLOR;
+    delete process.env.NO_COLOR;
+    Object.assign(process.env, colors);
     try {
       expect(install(newFolder())).toBe(false);
     } finally {
-      process.env.PATH = path;
+      // A variable set to undefined would become the text "undefined": the variables that were not set go away.
+      for (const [name, value] of Object.entries({ PATH: path, FORCE_COLOR: force, NO_COLOR: no })) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
       error.mockRestore();
       log.mockRestore();
     }
-    expect(errors).toEqual(["npm is not installed, or is not in the PATH."]);
+    return errors;
+  }
+
+  test("without npm, fails, and says that npm is missing", () => {
+    expect(errorsWithoutNpm({ NO_COLOR: "1" })).toEqual(["npm is not installed, or is not in the PATH."]);
+  });
+
+  test("in a terminal, says it in red", () => {
+    expect(errorsWithoutNpm({ FORCE_COLOR: "1" })).toEqual(["\u001b[31mnpm is not installed, or is not in the PATH.\u001b[39m"]);
   });
 });
 
