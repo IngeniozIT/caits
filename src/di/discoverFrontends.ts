@@ -1,8 +1,7 @@
-import { Input } from "../messaging/Input.js";
 import type { Line } from "../messaging/FrontendContextMap.js";
 import type { StoreDefinition } from "../state/createStore.js";
 import type { Binding } from "./Container.js";
-import { classesOf, linesIn, single, type UseCase } from "./discover.js";
+import { linesIn, useCaseOf, type UseCase } from "./discover.js";
 
 /**
  * A context of the frontend: its bindings, its use cases, its store (none for a context without a use case: its views and its
@@ -20,12 +19,11 @@ const isLine = ({ shares, event, events }: Partial<Record<string, unknown>>) => 
 
 /**
  * Turns the modules found in the frontend folder (src/frontend by default) into the contexts of the frontend: a context has a di.ts,
- * a store at most, and its context map if it hears the context shared or shares events with it; a handler serves the input DTO of its
- * use-case folder.
+ * a store at most, and its context map if it hears the context shared or shares events with it; a handler serves the input DTO that
+ * its execute takes.
  */
 export function discoverFrontends(found: {
   bindings: Record<string, readonly Binding[]>;
-  dtos: Modules;
   handlers: Modules;
   stores: Record<string, StoreDefinition<unknown, unknown>>;
   maps: Record<string, readonly Line[]>;
@@ -46,9 +44,7 @@ export function discoverFrontends(found: {
   for (const [path, module] of Object.entries(found.handlers)) {
     const context = contexts[contextOf(path)];
     if (!context) throw new Error(`${path} belongs to a frontend without a di.ts`);
-    const dto = path.replace(".handler.ts", ".dto.ts");
-    const input = single(classesOf(found.dtos[dto] ?? {}).filter(type => type.prototype instanceof Input), `${dto} declares one input DTO`);
-    context.useCases.push({ input, handler: single(classesOf(module), `${path} declares one handler`) });
+    context.useCases.push(useCaseOf(path, module));
   }
   for (const [name, context] of Object.entries(contexts)) {
     if (context.useCases.length > 0 && !context.store) {

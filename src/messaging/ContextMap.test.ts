@@ -1,14 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { DomainEvent } from "../DomainEvent.js";
 import { ContextMap, share, when } from "./ContextMap.js";
-import { Input } from "./Input.js";
 
 class Rang extends DomainEvent { constructor(readonly times: number) { super(); } }
 class RangLoudly extends Rang {}
 class Asked extends DomainEvent {}
-class Listen extends Input<string> { constructor(readonly times: number, readonly eventId: string) { super(); } }
-class Count extends Input<number> {}
-class Write extends Input<void> { constructor(readonly text: string) { super(); } }
+class Listen { constructor(readonly times: number, readonly eventId: string) {} }
+class Count {}
+class Write { constructor(readonly text: string) {} }
 class Heard extends DomainEvent { constructor(readonly times: number) { super(); } }
 
 const envelope = { eventId: "e1", correlationId: "c1" };

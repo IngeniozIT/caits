@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { FrontendEventBus } from "../messaging/FrontendEventBus.js";
 import { FakeMessageBus } from "../testing/shared/FakeMessageBus.js";
-import { Input } from "../messaging/Input.js";
 import { createStore, type StoreDefinition } from "./createStore.js";
 
 afterEach(() => { vi.restoreAllMocks(); });
 
-class SaveTotal extends Input<void> {
-  constructor(readonly total: number) { super(); }
+class SaveTotal {
+  constructor(readonly total: number) {}
 }
 type Event = { type: "add"; amount: number } | { type: "save" };
 
@@ -70,7 +69,7 @@ describe("a store", () => {
   test("reads the state before the event to decide what to send, and tells its subscribers before it sends", () => {
     const sent: unknown[] = [];
     const events = new FrontendEventBus<Event>();
-    const store = createStore({ ...total, reduce: () => 100 }, { events, bus: { send: async input => { sent.push([input, store.getState()]); return undefined as never; } } });
+    const store = createStore({ ...total, reduce: () => 100 }, { events, bus: { send: async input => { sent.push([input, store.getState()]); return undefined; } } });
 
     events.publish({ type: "save" });
 

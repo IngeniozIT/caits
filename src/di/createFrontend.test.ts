@@ -1,6 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
 import type { EventPublisher } from "../messaging/EventPublisher.js";
-import { Input } from "../messaging/Input.js";
 import type { StoreDefinition } from "../state/createStore.js";
 import { Token } from "../Token.js";
 import { bind } from "./Container.js";
@@ -8,8 +7,8 @@ import { createFrontend, createFrontendWithBus } from "./createFrontend.js";
 import type { FrontendModules } from "./discoverFrontends.js";
 import type { Fetcher } from "./Fetcher.js";
 
-class Ping extends Input<void> {
-  constructor(readonly text: string) { super(); }
+class Ping {
+  constructor(readonly text: string) {}
 }
 type Event = { type: "asked"; text: string } | { type: "answered"; text: string };
 interface Echo { say(text: string): string }

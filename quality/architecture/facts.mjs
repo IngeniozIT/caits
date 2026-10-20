@@ -10,7 +10,13 @@
 /** Each fact that a rule points at has the number of its line in the file, from 1. */
 /** @typedef {{ name: string | null; kind: string; line: number }} Export an exported name, its kind, and its line */
 /** @typedef {{ name: string | null; readonly: boolean; value: string | null; asConst: boolean; line: number }} Property a property of a class */
-/** @typedef {{ name: string | null; exported: boolean; extends: string | null; implements: string[]; properties: Property[]; line: number }} Class */
+/** @typedef {{ name: string | null; text: string }} TypeName a type that a signature names: its name when it is a name (`Note`), and its text */
+/**
+ * A method of a class, and what it returns: each type of its return type, out of `Promise<…>` and of the unions (`Promise<A | B>` names A
+ * and B), or null when it has no return type.
+ * @typedef {{ name: string | null; returns: TypeName[] | null; line: number }} Method
+ */
+/** @typedef {{ name: string | null; exported: boolean; extends: string | null; implements: string[]; properties: Property[]; methods: Method[]; line: number }} Class */
 /**
  * An item of `export default [ … ]`: the names that its chain calls, its text, the name that the first call takes first (`when(Event, …)`
  * takes Event), the class of each `new X(…)` in it, and its line.
@@ -120,8 +126,17 @@ function exportsOf(node, lineOf) {
   return [{ name: declaration.id?.name, kind: DECLARATION_KINDS[declaration.type] ?? declaration.type, line }];
 }
 
-/** @type {(node: Node, exported: boolean, lineOf: (node: Node) => number) => Class} */
-const classOf = (node, exported, lineOf) => ({
+/** The types that a return type names: those of a union, and the type of a Promise. @type {(type: Node, text: string) => TypeName[]} */
+const typeNamesOf = (type, text) => {
+  if (type.type === "TSUnionType") return type.types.flatMap((/** @type {Node} */ member) => typeNamesOf(member, text));
+  const reference = type.type === "TSTypeReference" && type.typeName.type === "Identifier" ? type.typeName.name : null;
+  const [promised, ...others] = (type.typeArguments ?? type.typeParameters)?.params ?? [];
+  if (reference === "Promise" && promised && others.length === 0) return typeNamesOf(promised, text);
+  return [{ name: reference, text: text.slice(type.start, type.end) }];
+};
+
+/** @type {(node: Node, exported: boolean, lineOf: (node: Node) => number, text: string) => Class} */
+const classOf = (node, exported, lineOf, text) => ({
   name: node.id?.name ?? null,
   exported,
   extends: nameOf(node.superClass),
@@ -133,6 +148,11 @@ const classOf = (node, exported, lineOf) => ({
     asConst: member.value?.type === "TSAsExpression" && member.value.typeAnnotation?.typeName?.name === "const",
     line: lineOf(member)
   })),
+  methods: node.body.body.filter((/** @type {Node} */ member) => (member.type === "MethodDefinition" || member.type === "ClassMethod") && member.kind === "method" && !member.static && !member.computed)
+    .map((/** @type {Node} */ member) => {
+      const returnType = (member.value ?? member).returnType?.typeAnnotation;
+      return { name: keyOf(member), returns: returnType ? typeNamesOf(returnType, text) : null, line: lineOf(member) };
+    }),
   line: lineOf(node)
 });
 
@@ -142,7 +162,7 @@ const classOf = (node, exported, lineOf) => ({
  * - exports: each exported name, with its kind (class, interface, type, const, function, enum, specifier, default, all);
  * - defaultArray: the items of `export default [ … ]`, with the calls of each item (`bind(X).to(Y)` calls bind, to), the name that the first
  *   call takes first (X), and the classes that the item builds, or null;
- * - classes: the classes, with what they extend and implement, and their properties;
+ * - classes: the classes, with what they extend and implement, their properties, and the return types of their methods;
  * - constructed: the class of each `new X(…)`;
  * - calls: each call, with the value of its arguments that are strings (null for the others);
  * - objectTypes: the value of each `type: "…"` of an object literal;
@@ -209,7 +229,7 @@ export function factsOf(program, text, comments = []) {
         });
       }
     }
-    if (node.type === "ClassDeclaration") facts.classes.push(classOf(node, exportedClasses.has(node), lineOf));
+    if (node.type === "ClassDeclaration") facts.classes.push(classOf(node, exportedClasses.has(node), lineOf, text));
     if (node.type === "NewExpression") {
       facts.constructed.push(nameOf(node.callee));
       facts.lines.constructed.push(lineOf(node));

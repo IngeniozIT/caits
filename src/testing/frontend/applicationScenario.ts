@@ -1,5 +1,4 @@
 import { expect } from "vitest";
-import type { Input } from "../../messaging/Input.js";
 import type { TestApplication } from "./applications.js";
 
 /**
@@ -10,7 +9,7 @@ import type { TestApplication } from "./applications.js";
 export class ApplicationScenario implements PromiseLike<void> {
   private readonly expected: object[] = [];
 
-  constructor(private readonly app: TestApplication, private readonly dto: Input<void>) {}
+  constructor(private readonly app: TestApplication, private readonly dto: object) {}
 
   expectItToPublish(event: object): this {
     this.expected.push(event);
@@ -32,5 +31,5 @@ export class ApplicationScenario implements PromiseLike<void> {
 }
 
 export const applicationScenario = (app: TestApplication) => ({
-  givenTheDto: (dto: Input<void>) => new ApplicationScenario(app, dto)
+  givenTheDto: (dto: object) => new ApplicationScenario(app, dto)
 });

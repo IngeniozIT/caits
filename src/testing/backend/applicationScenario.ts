@@ -1,19 +1,18 @@
 import { expect } from "vitest";
 import type { DomainEvent } from "../../DomainEvent.js";
-import type { Input } from "../../messaging/Input.js";
 import type { TestApplication } from "./applications.js";
 
-type Result<Output> = { output: Output } | { error: unknown };
+type Result = { output: unknown } | { error: unknown };
 
 /**
  * An application test, written as a presentation test: the input DTO, the events the handler publishes, then the output DTO or the error
  * that the message bus gives. The events are checked only when the test says which ones it expects.
  */
-export class ApplicationScenario<Output> {
+export class ApplicationScenario {
   private readonly expected: DomainEvent[] = [];
   private checksEvents = false;
 
-  constructor(private readonly app: TestApplication, private readonly dto: Input<Output>) {}
+  constructor(private readonly app: TestApplication, private readonly dto: object) {}
 
   expectItToPublish(event: DomainEvent): this {
     this.expected.push(event);
@@ -26,7 +25,7 @@ export class ApplicationScenario<Output> {
     return this;
   }
 
-  async expectTheOutputToBe(output: Output): Promise<void> {
+  async expectTheOutputToBe(output: object): Promise<void> {
     const from = this.app.published.length;
     const result = await this.run();
     if ("error" in result) throw result.error;
@@ -42,7 +41,7 @@ export class ApplicationScenario<Output> {
     expect(result.error).toStrictEqual(error);
   }
 
-  private async run(): Promise<Result<Output>> {
+  private async run(): Promise<Result> {
     try {
       return { output: await this.app.send(this.dto) };
     } catch (error) {
@@ -56,5 +55,5 @@ export class ApplicationScenario<Output> {
 }
 
 export const applicationScenario = (app: TestApplication) => ({
-  givenTheDto: <Output>(dto: Input<Output>) => new ApplicationScenario(app, dto)
+  givenTheDto: (dto: object) => new ApplicationScenario(app, dto)
 });

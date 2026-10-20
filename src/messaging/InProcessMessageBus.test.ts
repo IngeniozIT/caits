@@ -1,9 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { Input } from "./Input.js";
 import { DuplicateHandlerError, InProcessMessageBus, UnknownInputError } from "./InProcessMessageBus.js";
 
-class Double extends Input<number> { constructor(readonly value: number) { super(); } }
-class Greet extends Input<string> {}
+class Double { constructor(readonly value: number) {} }
+class Greet {}
 
 describe("a message bus", () => {
   test("hands an input to the handler that subscribes to its class, and answers what the handler answers", async () => {
@@ -18,7 +17,7 @@ describe("a message bus", () => {
   test("refuses an input nobody handles, and names its class", async () => {
     const error = await new InProcessMessageBus().send(new Greet()).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(UnknownInputError);
-    expect(error).toMatchObject({ name: "UnknownInputError", inputName: "Greet", message: "No handler subscribes to Greet" });
+    expect(error).toMatchObject({ name: "UnknownInputError", inputName: "Greet", message: "No handler takes Greet: write one next to its DTO, in <use-case>.handler.ts, with execute(input: Greet)" });
   });
 
   test("refuses a second handler for the same input, names it, and keeps the first", async () => {

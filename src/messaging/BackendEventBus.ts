@@ -1,6 +1,5 @@
 import type { DomainEvent } from "../DomainEvent.js";
 import type { ContextMap, Envelope } from "./ContextMap.js";
-import type { Input } from "./Input.js";
 import type { ReportError } from "./ReportError.js";
 
 export type Published = { readonly event: DomainEvent; readonly envelope: Envelope };
@@ -18,7 +17,7 @@ export class BackendEventBus {
 
   constructor(private readonly options: {
     map: ContextMap;
-    send: (input: Input<unknown>, envelope: Envelope) => Promise<unknown>;
+    send: (input: object, envelope: Envelope) => Promise<unknown>;
     nextEventId: () => string;
     reportError: ReportError;
   }) {}
@@ -48,7 +47,7 @@ export class BackendEventBus {
 
   private async deliver(event: DomainEvent, envelope: Envelope): Promise<void> {
     await nextTurn();
-    let inputs: Input<unknown>[];
+    let inputs: object[];
     try {
       inputs = this.options.map.inputsFor(event, envelope);
     } catch (error) {

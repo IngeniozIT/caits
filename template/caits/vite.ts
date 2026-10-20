@@ -14,7 +14,9 @@ export default defineConfig({
   plugins: [wholeRouteTypes(), marko(), kernel()],
   // `caits check` runs the checks at once: it gives each one a build folder of its own (CAITS_OUT_DIR), else they empty the folder of
   // each other. Without it, the build goes in dist/, which `npm start` runs.
-  build: { outDir: process.env.CAITS_OUT_DIR || "dist" },
+  // The build keeps the names of the classes: the errors of CAITS name them, and the build would else number a class that has the name
+  // of another, as a DTO of the backend and one of the frontend (`No handler takes AddMessageCommand$1`).
+  build: { outDir: process.env.CAITS_OUT_DIR || "dist", rolldownOptions: { output: { keepNames: true } } },
   // The checks write their reports while the development server runs: a report is not a file of the app, and reloads no page. The
   // sandbox of the mutation tests (.stryker-tmp/) copies the project, its tsconfig.json too: the server would empty its cache at each
   // copy, and lose the dependencies that it optimized.

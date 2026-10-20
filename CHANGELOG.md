@@ -2,6 +2,22 @@
 
 The changes of each version of CAITS, the newest first. A version is a git tag, and a version of the package `@ingenioz-it/caits` on npm: `npx @ingenioz-it/caits@<version> init my-app`.
 
+## Unreleased
+
+### Architecture
+
+- **Breaking**: `handler-answers-output` reads the return type of `execute`, as the kernel reads the type of its parameter, instead of the names of the classes: each class that it names comes from the DTO file of the use case, and a handler may answer with several (`Promise<MessageAdded | MessageRefused>`). Before, the rule looked for a `new …Output(…)` in the handler. In a project, give each backend `execute` its return type, such as `Promise<AddMessageOutput>`.
+- **Breaking**: no rule matches the name of a class with the name of its file. An adapter implements the port of its folder when it imports the interface from `domain/port/<port>/`, under any name, and not when it implements an interface of the same name from elsewhere: `adapter-implements-port`, `infra-folder-implements-port`, `backend-infra-shape` and `adapter-test-runs-contract` find the port in its folder, not by the name of the folder. An event file exports its event under any name (`event-file-exports-its-event`), and `event-type-names-context` reads the name of that class. A domain error lives in `domain/error/<Error>.ts` under any file name (`domain-shape`), as long as its class is an exported `…Error` that extends `Error`. The messages of `domain-file-exports-one-name`, `entity-is-class`, `error-extends-error` and `controller-extends-controller` no longer build a class name from the file. In a project, import the interface of the port in each adapter that implements it.
+
+### Kernel
+
+- **Breaking**: a DTO is a plain class, which extends nothing: `@ingenioz-it/caits/messaging/Input` is gone. The kernel finds the input DTO of a use case in its handler, by the type of the parameter of `execute`: the plugin of the kernel reads it as it reads the ports from the types of a constructor. The `.dto.ts` files are no longer read to find the use cases. A handler whose `execute` names no class is refused when the app starts, with its file. The message bus, `app.send` and the scenarios take any object, and `send` gives `unknown`: compare its output, `expect(await app.send(new GetWordCountQuery())).toEqual(new GetWordCountOutput(3))`, or check its class to read it, `assert(added instanceof AddMessageOutput)`, with the `assert` that the test modules of the backend now give. A controller still says what it sends and what it answers with: `Controller<AddMessageCommand, AddMessageOutput>`. In a project, remove from each input DTO `extends Input<…>`, its import and the `super()` of its constructor; give the `execute` of each handler the type of its input DTO, also when it reads nothing (`execute(_query: ListMessagesQuery)`); and remove `@ingenioz-it/caits/messaging/Input` from `quality/imports.mjs` if it lists it.
+- An input DTO that no handler takes gives the same error everywhere, which tells what to write: `No handler takes AddMessageCommand: write one next to its DTO, in <use-case>.handler.ts, with execute(input: AddMessageCommand)`. Before, the message bus said `No handler subscribes to …`, the backend `No context owns …` and the test application of the frontend `No context handles …`. A controller that no context has says where to write it.
+
+### Development
+
+- The build keeps the names of the classes (`keepNames`, in quality/caits/vite.ts): the errors of CAITS name them, and the build numbered a class that has the name of another, as a DTO of the backend and one of the frontend, in the errors of the production server (`No handler takes AddMessageCommand$1`). In a project, run `npx caits update`.
+
 ## 0.6.0
 
 ### Architecture

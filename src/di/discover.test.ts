@@ -1,30 +1,26 @@
 import { describe, expect, test } from "vitest";
 import { share, when } from "../messaging/ContextMap.js";
-import { Input } from "../messaging/Input.js";
+import type { MessageBus } from "../messaging/MessageBus.js";
 import { DomainEvent } from "../DomainEvent.js";
 import { Token } from "../Token.js";
 import { discover } from "./discover.js";
 
 class AddOutput {}
-class AddCommand extends Input<AddOutput> {}
-class AddHandler {}
-class ListQuery extends Input<string[]> {}
-class ListHandler {}
+class AddCommand {}
+class AddHandler { execute(_command: AddCommand) { return new AddOutput(); } }
+class ListQuery {}
+class ListHandler { execute(_query: ListQuery) { return []; } }
 class AddForm {}
 class Added extends DomainEvent {}
 const rules = [when(Added, () => []), share(Added, () => [])];
 
-const nothing = { bindings: {}, dtos: {}, handlers: {}, controllers: {}, maps: {} };
+const nothing = { bindings: {}, handlers: {}, controllers: {}, maps: {} };
 const root = "../../backend";
 
 describe("discovering the backend", () => {
-  test("a handler serves the input DTO of its use-case folder, in the context of the folder; what is not a class is left aside", () => {
+  test("a handler serves the input DTO that its execute takes, in the context of its folder; what is not a class is left aside", () => {
     const found = discover({
       ...nothing,
-      dtos: {
-        [`${root}/notes/command/add/add.dto.ts`]: { AddCommand, AddOutput, MAX_LENGTH: 280 },
-        [`${root}/notes/query/list/list.dto.ts`]: { ListQuery }
-      },
       handlers: {
         [`${root}/notes/command/add/add.handler.ts`]: { AddHandler, retries: 2 },
         [`${root}/notes/query/list/list.handler.ts`]: { ListHandler }
@@ -72,19 +68,18 @@ describe("discovering the backend", () => {
       .toThrow(`the backend context shared hears no other context: it has no context map (${root}/shared/context-map.ts)`);
   });
 
-  const dto = `${root}/notes/command/add/add.dto.ts`;
-  test.for<{ scenario: string; dtos: Record<string, Record<string, unknown>> }>([
-    { scenario: "has no DTO file", dtos: {} },
-    { scenario: "has a DTO file with no input", dtos: { [dto]: { AddOutput } } },
-    { scenario: "has a DTO file with two inputs", dtos: { [dto]: { AddCommand, ListQuery } } }
-  ])("refuses a use case that $scenario", ({ dtos }) => {
-    const handlers = { [`${root}/notes/command/add/add.handler.ts`]: { AddHandler } };
-    expect(() => discover({ ...nothing, dtos, handlers })).toThrow(`${root}/notes/command/add/add.dto.ts declares one input DTO`);
+  const path = `${root}/notes/command/add/add.handler.ts`;
+  test.for<[string, new () => unknown]>([
+    ["has no execute", class NoExecute {}],
+    ["takes no parameter", class NoParameter { execute() { return 1; } }],
+    ["takes a text", class TakesText { execute(_text: string) { return 1; } }],
+    ["takes a port, whose value is a token", class TakesPort { execute(_bus: MessageBus) { return 1; } }]
+  ])("refuses a handler that %s: its execute names no input DTO", ([, handler]) => {
+    expect(() => discover({ ...nothing, handlers: { [path]: { handler } } }))
+      .toThrow(`${path}: ${handler.name}.execute names no input DTO. Give its parameter the type of the input DTO, the class that the use case receives.`);
   });
 
   test("refuses a handler file with two classes", () => {
-    const dtos = { [`${root}/notes/command/add/add.dto.ts`]: { AddCommand } };
-    const handlers = { [`${root}/notes/command/add/add.handler.ts`]: { AddHandler, ListHandler } };
-    expect(() => discover({ ...nothing, dtos, handlers })).toThrow("add.handler.ts declares one handler (found 2)");
+    expect(() => discover({ ...nothing, handlers: { [path]: { AddHandler, ListHandler } } })).toThrow("add.handler.ts declares one handler (found 2)");
   });
 });

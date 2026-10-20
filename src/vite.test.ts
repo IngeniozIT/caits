@@ -75,7 +75,6 @@ describe("the contexts, while the server runs (dev server, Vitest in watch mode)
 
   test.for([
     ["a handler comes", "add", "/project/src/backend/notes/query/count-notes/count-notes.handler.ts"],
-    ["a DTO comes", "add", "/project/src/backend/notes/command/add-note/add-note.dto.ts"],
     ["a controller goes", "unlink", "/project/src/backend/notes/query/count-notes/count-notes.http.controller.ts"],
     ["the di.ts of a new context comes", "add", "/project/src/backend/notes/di.ts"],
     ["the context map of a context comes", "add", "/project/src/backend/notes/context-map.ts"]
@@ -108,6 +107,7 @@ describe("the contexts, while the server runs (dev server, Vitest in watch mode)
 
   test.for([
     ["a file that no module finds", "/project/src/backend/notes/domain/entity/Note.ts"],
+    ["a DTO, which its handler imports", "/project/src/backend/notes/command/add-note/add-note.dto.ts"],
     ["a handler out of a use case", "/project/src/backend/notes/infra/count-notes/count-notes.handler.ts"],
     ["a context map out of a context", "/project/src/backend/context-map.ts"],
     ["a file out of the source folder", "/project/test/backend/notes/di.ts"],

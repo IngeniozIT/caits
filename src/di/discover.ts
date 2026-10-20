@@ -1,5 +1,4 @@
 import type { Translation } from "../messaging/ContextMap.js";
-import { Input } from "../messaging/Input.js";
 import type { Binding } from "./Container.js";
 
 export type Class = abstract new (...args: never[]) => unknown;
@@ -21,6 +20,22 @@ export function single<T>(found: T[], what: string): T {
   return found[0];
 }
 
+/** Where the plugin of the kernel writes the input DTO of a handler (see declareDependencies.js). */
+export const INPUT = Symbol.for("kernel.input");
+
+/**
+ * The use case of a handler: the handler, and the input DTO that its execute takes. The plugin of the kernel reads the class from the
+ * type of the parameter, as it reads the ports from the types of the constructor.
+ */
+export function useCaseOf(path: string, module: Record<string, unknown>): UseCase {
+  const handler = single(classesOf(module), `${path} declares one handler`);
+  const input = (handler as { [INPUT]?: () => unknown })[INPUT]?.();
+  if (typeof input !== "function") {
+    throw new Error(`${path}: ${handler.name}.execute names no input DTO. Give its parameter the type of the input DTO, the class that the use case receives.`);
+  }
+  return { input: input as Class, handler };
+}
+
 /**
  * The lines of a context map, as its file gives them: the kernel refuses, when it starts, a map that is not a list of lines, rather than
  * lose what it holds without a word. `isLine` tells a line of the side.
@@ -40,10 +55,10 @@ const isTranslation = ({ shares, event, inputs, events }: Partial<Record<string,
 
 /**
  * Turns the modules found in the backend folder (src/backend by default) into the contexts of the backend: a handler serves the input
- * DTO of its use-case folder, and the context map of a context gives the events of shared that it hears and those of its own that it
+ * DTO that its execute takes, and the context map of a context gives the events of shared that it hears and those of its own that it
  * shares.
  */
-export function discover(found: { bindings: Record<string, readonly Binding[]>; dtos: Modules; handlers: Modules; controllers: Modules; maps: Record<string, Translation[]> }): BackendModules {
+export function discover(found: { bindings: Record<string, readonly Binding[]>; handlers: Modules; controllers: Modules; maps: Record<string, Translation[]> }): BackendModules {
   const contexts: Record<string, ContextModules> = {};
   const context = (path: string) => contexts[contextOf(path)] ??= { bindings: [], useCases: [], controllers: [], map: [] };
   let shared: readonly Binding[] = [];
@@ -52,12 +67,7 @@ export function discover(found: { bindings: Record<string, readonly Binding[]>; 
     if (contextOf(path) === "shared") shared = bindings;
     else context(path).bindings = bindings;
   }
-  for (const [path, module] of Object.entries(found.handlers)) {
-    const dto = path.replace(".handler.ts", ".dto.ts");
-    const input = single(classesOf(found.dtos[dto] ?? {}).filter(type => type.prototype instanceof Input), `${dto} declares one input DTO`);
-    const handler = single(classesOf(module), `${path} declares one handler`);
-    context(path).useCases.push({ input, handler });
-  }
+  for (const [path, module] of Object.entries(found.handlers)) context(path).useCases.push(useCaseOf(path, module));
   for (const [path, module] of Object.entries(found.controllers)) context(path).controllers.push(...classesOf(module));
   for (const [path, map] of Object.entries(found.maps)) {
     if (contextOf(path) === "shared") throw new Error(`the backend context shared hears no other context: it has no context map (${path})`);

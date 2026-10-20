@@ -100,6 +100,37 @@ export default class Main { constructor(name: string) {} }`)).toEqual([
     ]);
   });
 
+  test("writes the input DTO of each class that has an execute method: the value of the type of its first parameter", () => {
+    expect(written(`import type { AddCommand } from "./add.dto.js";
+import type { Clock } from "./Clock.js";
+export class AddHandler {
+  constructor(private readonly clock: Clock) {}
+  async execute(command: AddCommand, retries: number): Promise<void> {}
+}
+class Local {}
+class ListHandler { execute({ page }: Local = new Local()) { return []; } }`)).toEqual([
+      'import * as __dependencies_0 from "./Clock.js";',
+      'import * as __dependencies_1 from "./add.dto.js";',
+      'AddHandler[Symbol.for("kernel.dependencies")] = [{ name: "clock", type: "Clock", token: () => __dependencies_0["Clock"] }];',
+      'AddHandler[Symbol.for("kernel.input")] = () => __dependencies_1["AddCommand"];',
+      'ListHandler[Symbol.for("kernel.input")] = () => Local;'
+    ]);
+  });
+
+  test("writes no input DTO for an execute that takes nothing, or a type without a value, nor for another member named execute", () => {
+    expect(written(`import type { Schema } from "zod";
+const execute = Symbol();
+class Command {}
+class Empty { execute() {} }
+class Text { execute(text: string) {} }
+class Untyped { execute(input) {} }
+class Package { execute(schema: Schema) {} }
+class Static { static execute(command: Command) {} }
+class Computed { [execute](command: Command) {} }
+class Setter { set execute(command: Command) {} }
+class Other { run(command: Command) {} }`)).toBeUndefined();
+  });
+
   test("names each token declared without a name after its constant", () => {
     expect(written(`import { Token } from "../Token.js";
 export interface Clock {}

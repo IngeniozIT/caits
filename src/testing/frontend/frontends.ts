@@ -1,5 +1,4 @@
 import { FrontendEventBus } from "../../messaging/FrontendEventBus.js";
-import type { Input } from "../../messaging/Input.js";
 import { createStore, type StoreDefinition } from "../../state/createStore.js";
 import type { EventPublisher } from "../../messaging/EventPublisher.js";
 import { discoveredFrontends } from "../../di/discoveredFrontends.js";
@@ -9,7 +8,7 @@ type EventOf<F> = F extends { events: EventPublisher<infer E> } ? E : never;
 type StoreOf<F> = F extends { store: infer S } ? S : undefined;
 
 /** The presentation of a context in a test: its frontend, the DTOs that its store sent, and the events that it published. */
-export type TestPresentation<F> = { events: EventPublisher<EventOf<F>>; store: StoreOf<F>; sent: Input<unknown>[]; published: EventOf<F>[] };
+export type TestPresentation<F> = { events: EventPublisher<EventOf<F>>; store: StoreOf<F>; sent: object[]; published: EventOf<F>[] };
 
 /**
  * The presentation of a context, as its views and its components get it: its EventPublisher and its store (none, for a context
@@ -19,11 +18,11 @@ export type TestPresentation<F> = { events: EventPublisher<EventOf<F>>; store: S
  */
 export function testPresentation<Name extends keyof Frontends>(name: Name): TestPresentation<Frontends[Name]> {
   const events = new FrontendEventBus<EventOf<Frontends[Name]>>();
-  const sent: Input<unknown>[] = [];
+  const sent: object[] = [];
   const published: EventOf<Frontends[Name]>[] = [];
   events.subscribe(event => { published.push(event); });
   const definition = discoveredFrontends[name].store as StoreDefinition<unknown, EventOf<Frontends[Name]>> | undefined;
-  const store = definition && createStore(definition, { events, bus: { send: <Output>(input: Input<Output>) => { sent.push(input); return Promise.resolve(undefined as Output); } } });
+  const store = definition && createStore(definition, { events, bus: { send: (input: object) => { sent.push(input); return Promise.resolve(undefined); } } });
   return { events, store, sent, published } as unknown as TestPresentation<Frontends[Name]>;
 }
 

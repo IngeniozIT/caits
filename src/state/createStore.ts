@@ -1,5 +1,4 @@
 import type { EventSubscriber } from "../messaging/EventSubscriber.js";
-import type { Input } from "../messaging/Input.js";
 import type { MessageBus } from "../messaging/MessageBus.js";
 import { reportToConsole, type ReportError } from "../messaging/ReportError.js";
 
@@ -9,7 +8,7 @@ export interface StoreDefinition<S, E> {
   /** The state after the event. */
   reduce(state: S, event: E): S;
   /** The input DTO that the event asks the store to send to the message bus, or undefined. It reads the state before the event. */
-  send(state: S, event: E): Input<unknown> | undefined;
+  send(state: S, event: E): object | undefined;
 }
 
 export interface Store<S> {

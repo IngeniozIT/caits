@@ -4,7 +4,6 @@ declare module "virtual:kernel/backend" {
   import type { Translation } from "@ingenioz-it/caits/messaging/ContextMap";
   type Modules = Record<string, Record<string, unknown>>;
   export const bindings: Record<string, readonly Binding[]>;
-  export const dtos: Modules;
   export const handlers: Modules;
   export const controllers: Modules;
   export const maps: Record<string, Translation[]>;
@@ -21,7 +20,6 @@ declare module "virtual:kernel/frontend" {
   import type { StoreDefinition } from "@ingenioz-it/caits/state/createStore";
   type Modules = Record<string, Record<string, unknown>>;
   export const bindings: Record<string, readonly Binding[]>;
-  export const dtos: Modules;
   export const handlers: Modules;
   export const stores: Record<string, StoreDefinition<unknown, unknown>>;
   export const maps: Record<string, readonly Line[]>;

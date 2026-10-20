@@ -190,16 +190,18 @@ export function portOf(path) {
 }
 
 /**
- * An adapter, or its test: {context}/infra/{folder}/{file}. It implements the port named after its folder.
+ * An adapter, or its test: {context}/infra/{folder}/{file}. Its port is in the folder of the same name in the domain, domain/port/{folder}/:
+ * the module of that folder that is not its contract, whatever its name. The module is null when the domain has no such port.
  * @param {string} path
- * @returns {{ folder: string; test: boolean; port: string; portModule: string } | null}
+ * @param {Set<string>} paths
+ * @returns {{ folder: string; test: boolean; portModule: string | null } | null}
  */
-export function adapterOf(path) {
+export function adapterOf(path, paths) {
   const match = /^(src\/(?:backend|frontend)\/[^/]+)\/infra\/([a-z0-9-]+)\/([^/]+)$/.exec(path);
   if (!match) return null;
   const [, context, folder, name] = match;
-  const port = pascal(folder);
-  return { folder, test: name.endsWith(".test.ts"), port, portModule: `${context}/domain/port/${folder}/${port}` };
+  const port = [...paths].sort().map(portOf).find(found => found !== null && !found.contract && found.module.startsWith(`${context}/domain/port/${folder}/`));
+  return { folder, test: name.endsWith(".test.ts"), portModule: port?.module ?? null };
 }
 
 /** The contexts whose frontend a file takes: `frontendOf($global, "notes")` takes the frontend of notes. @type {(file: File) => string[]} */
@@ -216,7 +218,7 @@ export const LISTS = { domain: "domain", application: "application", presentatio
 
 /**
  * Whether a list of quality/imports.mjs holds an import of a package: the package, the module or the Node API itself, or a folder of
- * modules that holds it (`@ingenioz-it/caits/messaging/*` holds `@ingenioz-it/caits/messaging/Input`).
+ * modules that holds it (`@ingenioz-it/caits/messaging/*` holds `@ingenioz-it/caits/messaging/EventPublisher`).
  * @param {string} specifier
  * @param {string[]} list
  */

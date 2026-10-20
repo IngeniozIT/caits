@@ -4,7 +4,7 @@ import type { Binding } from "../../di/Container.js";
 import { createFrontendWithBus } from "../../di/createFrontend.js";
 import { discoveredFrontends } from "../../di/discoveredFrontends.js";
 import type { Fetcher } from "../../di/Fetcher.js";
-import type { Input } from "../../messaging/Input.js";
+import { UnknownInputError } from "../../messaging/InProcessMessageBus.js";
 import type { Token } from "../../Token.js";
 
 /** The test.di.ts of each context that has one: the bindings that replace, in tests, those that reach outside the browser. */
@@ -37,7 +37,7 @@ export function createTestApplication() {
 
   const ownerOf = (input: object): string => {
     const name = Object.keys(discoveredFrontends).find(context => discoveredFrontends[context].useCases.some(({ input: type }) => type === input.constructor));
-    if (name === undefined) throw new Error(`No context handles ${input.constructor.name}`);
+    if (name === undefined) throw new UnknownInputError(input.constructor.name);
     return name;
   };
 
@@ -50,7 +50,7 @@ export function createTestApplication() {
 
   return {
     /** Sends an input DTO to the message bus of the context that handles it. */
-    send: <Output>(input: Input<Output>): Promise<Output> => frontend(ownerOf(input)).bus.send(input),
+    send: (input: object): Promise<unknown> => frontend(ownerOf(input)).bus.send(input),
     /** The dependency with this token, built now if no handler needed it before. */
     get: <T>(token: Token<T>): T => {
       const found = holders(token);

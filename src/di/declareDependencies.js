@@ -9,12 +9,14 @@
  */
 
 /**
- * The code that a module needs after its own, for the containers:
+ * The code that a module needs after its own, for the containers and the message buses:
  * - after each class that has a constructor, the dependencies of the constructor (DEPENDENCIES in Container.ts): the name of each
  *   parameter, if it is optional, and the token of its type when the type has a value of the same name, declared in the module or
  *   imported from a relative path, from a shortcut of the project (#…, which a package.json or a tsconfig.json maps to a folder) or from
  *   one of the packages given (a port and its token, or a class: the kernel gives EventPublisher, DataDirectory…). The token is read only
  *   when the container needs it, thus a cycle between modules does no harm. The name of the type goes with its token, for the errors;
+ * - after each class that has an execute method, the value of the type of its first parameter, found the same way (INPUT in
+ *   discover.ts): the input DTO of a handler, which the message bus gives it;
  * - the name of each token declared without one: the name of its constant.
  * The names are text: the minifier can rename the code.
  * @param {string} code
@@ -31,6 +33,8 @@ export function declareDependencies(code, filename, parse, packages) {
   const values = new Set();
   /** @type {{ name: string; parameters: readonly ESTree.ParamPattern[] }[]} */
   const classes = [];
+  /** @type {{ name: string; input: ESTree.ParamPattern }[]} */
+  const executes = [];
   /** @type {string[]} */
   const tokens = [];
 
@@ -57,9 +61,12 @@ export function declareDependencies(code, filename, parse, packages) {
       values.add(declaration.id.name);
       const constructor = declaration.body.body.find(member => member.type === "MethodDefinition" && member.kind === "constructor");
       if (constructor?.type === "MethodDefinition") classes.push({ name: declaration.id.name, parameters: constructor.value.params });
+      const execute = declaration.body.body.find(member => member.type === "MethodDefinition" && member.kind === "method" && !member.static && !member.computed
+        && member.key.type === "Identifier" && member.key.name === "execute");
+      const input = execute?.type === "MethodDefinition" ? execute.value.params[0] : undefined;
+      if (input) executes.push({ name: declaration.id.name, input });
     }
   }
-  if (classes.length === 0 && tokens.length === 0) return undefined;
 
   /** @type {Map<string, string>} */
   const namespaces = new Map();
@@ -75,8 +82,7 @@ export function declareDependencies(code, filename, parse, packages) {
   };
   /** @type {(parameter: ESTree.ParamPattern, index: number) => string} */
   const dependencyOf = (parameter, index) => {
-    const inner = parameter.type === "TSParameterProperty" ? parameter.parameter : parameter;
-    const pattern = inner.type === "AssignmentPattern" ? inner.left : inner;
+    const { inner, pattern } = partsOf(parameter);
     const name = pattern.type === "Identifier" ? pattern.name : `#${index}`;
     const typed = tokenOf(pattern.typeAnnotation?.typeAnnotation);
     const optional = inner.type === "AssignmentPattern" || pattern.optional === true;
@@ -84,9 +90,23 @@ export function declareDependencies(code, filename, parse, packages) {
   };
 
   const declarations = classes.map(({ name, parameters }) => `${name}[Symbol.for("kernel.dependencies")] = [${parameters.map(dependencyOf).join(", ")}];`);
+  const inputs = executes.flatMap(({ name, input }) => {
+    const typed = tokenOf(partsOf(input).pattern.typeAnnotation?.typeAnnotation);
+    return typed ? [`${name}[Symbol.for("kernel.input")] = () => ${typed.token};`] : [];
+  });
   const imports = [...namespaces].map(([source, alias]) => `import * as ${alias} from ${JSON.stringify(source)};`);
   const names = tokens.map(name => `${name}.name = ${JSON.stringify(name)};`);
-  return [...imports, ...declarations, ...names].join("\n");
+  const lines = [...imports, ...declarations, ...inputs, ...names];
+  return lines.length > 0 ? lines.join("\n") : undefined;
+}
+
+/**
+ * A parameter, without what TypeScript adds around it (`private readonly`), and its pattern, without its default value.
+ * @param {ESTree.ParamPattern} parameter
+ */
+function partsOf(parameter) {
+  const inner = parameter.type === "TSParameterProperty" ? parameter.parameter : parameter;
+  return { inner, pattern: inner.type === "AssignmentPattern" ? inner.left : inner };
 }
 
 /** @type {(name: ESTree.ModuleExportName) => string} */

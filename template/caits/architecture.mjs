@@ -5,7 +5,7 @@ import {
   LISTS, linesOf, locate, portOf, resolveImport, typeOfEvent
 } from "@ingenioz-it/caits/quality/architecture";
 
-/** @import { Located, Location, Rule } from "@ingenioz-it/caits/quality/architecture" */
+/** @import { File, Located, Location, Rule } from "@ingenioz-it/caits/quality/architecture" */
 
 /**
  * The rules of the architecture, by layer. Each rule has a name and a description, reads one kind of thing (`on`), and checks it:
@@ -55,11 +55,35 @@ const fileKindOf = target =>
  */
 const withinContext = (from, to) => from.kind === "layer" && to.kind === "layer" && to.side === from.side && to.layer !== "di"
   && (to.context === from.context || to.context === "shared");
-/** The port of an adapter, from the path of the adapter: its name and its path. @type {(target: string) => { name: string; path: string } | null} */
-const portOfAdapter = target => {
-  const adapter = adapterOf(target);
-  return adapter && { name: adapter.port, path: `${adapter.portModule}.ts` };
+/**
+ * The name of a port: the interface that its module exports, or the name of its file when the module exports none yet.
+ * @type {(module: string, files: File[]) => string}
+ */
+const portNameOf = (module, files) => files.find(file => file.path === `${module}.ts`)?.exports.find(({ kind }) => kind === "interface")?.name ?? fileName(module);
+/**
+ * The port of an adapter, from the path of the adapter: its name and its path, when the domain declares it.
+ * @type {(target: string, project: { paths: Set<string>; files: File[] }) => { name: string; path: string } | null}
+ */
+const portOfAdapter = (target, { paths, files }) => {
+  const module = adapterOf(target, paths)?.portModule;
+  return module ? { name: portNameOf(module, files), path: `${module}.ts` } : null;
 };
+/**
+ * The names that a file imports from a module of the project, without its extension: `implements NoteRepository` names the port when
+ * NoteRepository comes from the module of the port.
+ * @type {(file: File, module: string, root: string) => Set<string>}
+ */
+const namesFrom = (file, module, root) => new Set(file.imported
+  .filter(({ from }) => resolveImport(file.path, from, root).target.replace(/\.(js|ts)$/, "") === module).map(({ name }) => name));
+/**
+ * The port folder of the domain that a class implements, through the module that the file imports its interface from.
+ * @type {(file: File, root: string) => { implementer: string; name: string; folder: string } | undefined}
+ */
+const implementedPortOf = (file, root) => file.classes.flatMap(declared => declared.implements.flatMap(name => {
+  const from = file.imported.find(imported => imported.name === name)?.from;
+  const port = from === undefined ? null : portOf(`${resolveImport(file.path, from, root).target.replace(/\.(js|ts)$/, "")}.ts`);
+  return port && !port.contract ? [{ implementer: declared.name ?? "Its class", name, folder: port.folder }] : [];
+}))[0];
 /**
  * The file that an import of a stylesheet loads: Sass adds the extension, and the _ of a partial.
  * @type {(target: string, paths: Set<string>) => string}
@@ -171,16 +195,16 @@ export const rules = [
     on: "file",
     /** The name of the files of each folder of the domain: what it says, and the name to give. */
     kinds: {
-      entity: "the name of an entity is its class, in PascalCase: entity/{Entity}.ts",
-      "value-object": "the name of a value object is its class, in PascalCase: value-object/{ValueObject}.ts",
-      error: "the name of an error ends with Error: error/{Name}Error.ts",
-      event: "the name of a domain event is its class, in PascalCase: event/{DomainEvent}.ts",
+      entity: "the file of an entity is in PascalCase: entity/{Entity}.ts",
+      "value-object": "the file of a value object is in PascalCase: value-object/{ValueObject}.ts",
+      error: "the file of an error is in PascalCase: error/{Error}.ts",
+      event: "the file of a domain event is in PascalCase: event/{DomainEvent}.ts",
       port: "a port is port/{port}/{Port}.ts, beside its contract {Port}.contract.ts"
     },
     /** @this {{ kinds: Record<string, string> }} */
     check({ path }) {
       if (!/^src\/(backend|frontend)\/[^/]+\/domain\//.test(path)
-        || /^src\/(backend|frontend)\/[^/]+\/domain\/((entity|value-object)\/[A-Z]\w*(\.test)?|error\/[A-Z]\w*Error|event\/[A-Z]\w*|port\/[a-z0-9-]+\/[A-Z]\w*?(\.contract)?)\.ts$/.test(path)) return;
+        || /^src\/(backend|frontend)\/[^/]+\/domain\/((entity|value-object)\/[A-Z]\w*(\.test)?|error\/[A-Z]\w*|event\/[A-Z]\w*|port\/[a-z0-9-]+\/[A-Z]\w*?(\.contract)?)\.ts$/.test(path)) return;
       const [, context, rest] = /^(src\/(?:backend|frontend)\/[^/]+)\/domain\/(.+)$/.exec(path) ?? [];
       const name = fileName(path);
       const parts = rest.split("/");
@@ -198,11 +222,10 @@ export const rules = [
       if (test && kind !== "entity" && kind !== "value-object") {
         return `${name} is a test in ${kind}/, but in the domain only the entities and the value objects have a test. Test it through the application test of a use case${kind === "port" ? ", or through the contract of the port" : ""}.`;
       }
-      const stem = kind === "error" && !base.endsWith("Error") ? `${base}Error` : base;
-      const suggested = `${stem}${test ? ".test" : contract ? ".contract" : ""}.ts`;
+      const suggested = `${base}${test ? ".test" : contract ? ".contract" : ""}.ts`;
       const folder = kind === "port" ? `port/${kebab(base)}` : kind;
       if (parts.slice(0, -1).join("/") !== folder) return `${name} is in ${parts.slice(0, -1).join("/")}/, but its place is ${folder}/. Move it to ${context}/domain/${folder}/${suggested}.`;
-      return `${name} is in ${folder}/, but ${this.kinds[kind]}. Rename it ${suggested}${kind === "error" ? `, and its class ${stem}` : ""}.`;
+      return `${name} is in ${folder}/, but ${this.kinds[kind]}. Rename it ${suggested}.`;
     }
   },
   {
@@ -216,23 +239,22 @@ export const rules = [
       const names = exports.filter(({ kind }) => this.declarations.has(kind)).map(({ name }) => name);
       if (names.length === exports.length && new Set(names).size === 1) return;
       const file = fileName(path);
-      const expected = file.slice(0, -".ts".length);
       const unnamed = exports.find(({ kind }) => kind === "default" || kind === "all");
       if (unnamed) {
-        return at(unnamed.line, `${file} has an export without a name (${unnamed.kind === "all" ? "export *" : "export default"}), but a domain file exports one name, ${expected}. Export it as ${expected}.`);
+        return at(unnamed.line, `${file} has an export without a name (${unnamed.kind === "all" ? "export *" : "export default"}), but a domain file exports one name. Export its declaration with its name: \`export class …\`.`);
       }
       const distinct = [...new Set(exports.map(({ name }) => name ?? ""))];
       if (distinct.length > 1) {
-        const extras = distinct.filter(name => name !== expected);
-        const first = exports.find(({ name }) => extras.includes(name ?? "")) ?? exports[0];
+        const [kept, ...extras] = distinct;
+        const first = exports.find(({ name }) => name === extras[0]) ?? exports[0];
         const port = /\/domain\/port\//.test(path) ? ", which the port and its token share" : "";
-        return at(first.line, `${file} exports ${distinct.length} names (${distinct.join(", ")}), but a domain file exports one name, ${expected}${port}. Move ${listOf(extras)} into ${expected} as a static member, or to a file of its own.`);
+        return at(first.line, `${file} exports ${distinct.length} names (${distinct.join(", ")}), but a domain file exports one name${port}. Move ${listOf(extras)} into ${kept} as a static member, or to a file of its own.`);
       }
       const listed = exports.find(({ kind }) => kind === "specifier");
       if (listed) {
         return at(listed.line, `${file} exports ${listed.name} from a list, \`export { … }\`, but a domain file exports its one name where it declares it. Write \`export\` before the declaration of ${listed.name}.`);
       }
-      return `${file} exports nothing, but a domain file exports one name, ${expected}. Export ${expected}.`;
+      return `${file} exports nothing, but a domain file exports one name. Write \`export\` before its declaration.`;
     }
   },
   {
@@ -240,11 +262,13 @@ export const rules = [
     description: "An entity or a value object is an exported class. The class holds the business rules of its values.",
     on: "file",
     check: ({ path, classes, exports }) => {
-      const [, kind, name] = /^src\/(?:backend|frontend)\/[^/]+\/domain\/(entity|value-object)\/([A-Z]\w*)\.ts$/.exec(path) ?? [];
+      const kind = /^src\/(?:backend|frontend)\/[^/]+\/domain\/(entity|value-object)\/[A-Z]\w*\.ts$/.exec(path)?.[1];
       if (!kind || classes.some(({ exported }) => exported)) return;
-      const rule = `${kind === "entity" ? "an entity" : "a value object"} is an exported class, which holds the business rules of its values. Write \`export class ${name}\`, and put the rules of its values in it.`;
-      const exported = exports.find(entry => entry.name === name);
-      return exported ? at(exported.line, `${name}.ts exports ${name} as ${kindOf(exported.kind)}, but ${rule}`) : `${name}.ts exports no class, but ${rule}`;
+      const rule = `${kind === "entity" ? "an entity" : "a value object"} is an exported class, which holds the business rules of its values.`;
+      const [exported] = exports;
+      return exported?.name
+        ? at(exported.line, `${fileName(path)} exports ${exported.name} as ${kindOf(exported.kind)}, but ${rule} Make it a class, \`export class …\`, and put the rules of its values in it.`)
+        : `${fileName(path)} exports no class, but ${rule} Write \`export class …\`, and put the rules of its values in it.`;
     }
   },
   {
@@ -252,17 +276,16 @@ export const rules = [
     description: "A domain error is an exported class …Error that extends Error.",
     on: "file",
     check: ({ path, classes }) => {
-      const name = /^src\/(?:backend|frontend)\/[^/]+\/domain\/error\/([A-Z]\w*Error)\.ts$/.exec(path)?.[1];
-      if (!name || classes.some(({ exported, name: declared, extends: parent }) => exported && declared !== null && /^\w+Error$/.test(declared) && parent === "Error")) return;
-      const fix = `Write \`export class ${name} extends Error\`.`;
-      const declared = classes.find(({ name: other }) => other === name);
-      if (!declared) {
-        const others = classes.flatMap(({ name: other }) => other === null ? [] : [other]);
-        return `${name}.ts holds no class ${name}${others.length > 0 ? `, only ${listOf(others)}` : ""}, but a domain error is an exported class named after its file, which extends Error. ${fix}`;
-      }
-      return at(declared.line, declared.exported
-        ? `${name} extends ${declared.extends ?? "nothing"}, but a domain error is an exported class that extends Error. ${fix}`
-        : `${name} is not exported, but a domain error is an exported class that extends Error. ${fix}`);
+      if (!/^src\/(?:backend|frontend)\/[^/]+\/domain\/error\/[^/]+\.ts$/.test(path)
+        || classes.some(({ exported, name, extends: parent }) => exported && name !== null && /^\w+Error$/.test(name) && parent === "Error")) return;
+      const rule = "a domain error is an exported class …Error that extends Error.";
+      const declared = classes.find(({ extends: parent }) => parent === "Error") ?? classes.find(({ name }) => name !== null && /Error$/.test(name)) ?? classes[0];
+      if (!declared) return `${fileName(path)} holds no class, but ${rule} Write \`export class …Error extends Error\`.`;
+      const name = declared.name ?? "Its class";
+      const fix = `Write \`export class ${declared.name !== null && /Error$/.test(declared.name) ? declared.name : `${declared.name ?? "…"}Error`} extends Error\`.`;
+      if (!declared.exported) return at(declared.line, `${name} is not exported, but ${rule} ${fix}`);
+      if (declared.extends !== "Error") return at(declared.line, `${name} extends ${declared.extends ?? "nothing"}, but ${rule} ${fix}`);
+      return at(declared.line, `${name} does not end with Error, but ${rule} ${fix}`);
     }
   },
   {
@@ -310,8 +333,8 @@ export const rules = [
     on: "file",
     check: (file, { files, paths, root }) => {
       const port = portOf(file.path);
-      if (!port?.contract || files.some(other => adapterOf(other.path)?.test && importedModules(other, root).includes(`${port.module}.contract`))) return;
-      const describe = file.exports.find(({ kind }) => kind === "function")?.name ?? `describe${port.name}Contract`;
+      if (!port?.contract || files.some(other => adapterOf(other.path, paths)?.test && importedModules(other, root).includes(`${port.module}.contract`))) return;
+      const describe = file.exports.find(({ kind }) => kind === "function")?.name ?? "the function that the contract exports";
       const infra = `${contextFolderOf(file.path)}/infra/${port.folder}/`;
       const adapters = [...paths].filter(other => other.startsWith(infra)).map(fileName).sort();
       if (adapters.length === 0) return `No test runs the contract of ${port.name}, so it checks nothing. Write an adapter of ${port.name} in ${infra}, with a test that calls ${describe}.`;
@@ -341,7 +364,7 @@ export const rules = [
   },
   {
     name: "application-imports-only-listed-packages",
-    description: "The application (the handlers and the DTOs of the use cases, and the events of the frontend) imports only the packages, the modules of the kernel and the Node APIs that quality/imports.mjs lists for it. CAITS lists those of the domain, @ingenioz-it/caits/messaging/Input and /EventPublisher. The rest is technology: the domain declares a port, the infra implements it, and di.ts binds it.",
+    description: "The application (the handlers and the DTOs of the use cases, and the events of the frontend) imports only the packages, the modules of the kernel and the Node APIs that quality/imports.mjs lists for it. CAITS lists those of the domain and @ingenioz-it/caits/messaging/EventPublisher. The rest is technology: the domain declares a port, the infra implements it, and di.ts binds it.",
     on: "import",
     /** The fix for a module of the kernel that the list does not hold, by the folder of the module. */
     kernel: {
@@ -367,10 +390,11 @@ export const rules = [
     name: "entity-without-port",
     description: "An entity or a value object does not import a port. It holds the business rules; the handlers call the ports.",
     on: "import",
-    check: ({ file, from, target }) => {
-      const [, kind, name] = /\/domain\/(entity|value-object)\/(?:.+\/)?(\w+)\.ts$/.exec(file.path) ?? [];
+    check: ({ file, from, specifier, target }) => {
+      const kind = /\/domain\/(entity|value-object)\/(?:.+\/)?\w+\.ts$/.exec(file.path)?.[1];
       if (from.layer !== "domain" || !kind || !/\/domain\/port\//.test(target)) return;
-      const port = portOf(target.replace(/\.js$/, ".ts"))?.name ?? fileName(target).replace(/\.(js|ts)$/, "");
+      const name = file.classes.find(({ exported }) => exported)?.name ?? fileName(file.path).replace(/\.ts$/, "");
+      const port = file.imported.find(({ from: source }) => source === specifier)?.name ?? fileName(target).replace(/\.(js|ts)$/, "");
       return `The ${kind === "entity" ? "entity" : "value object"} ${name} imports the port ${port} (${target}), but an entity or a value object holds business rules, and never talks to a port. Let the handler call ${port}, and give ${name} the values it needs.`;
     }
   },
@@ -421,17 +445,18 @@ export const rules = [
   },
   {
     name: "handler-answers-output",
-    description: "A backend handler gives its result as an Output DTO: it makes a `new …Output(…)`.",
+    description: "A backend handler answers with output DTOs: the return type of its execute names only classes of the DTO file of its use case, one or several (`Promise<AddMessageOutput>`, `Promise<MessageAdded | MessageRefused>`).",
     on: "file",
-    check: ({ path, constructed, classes }, { files }) => {
-      const [, folder, useCase] = /^(src\/backend\/[^/]+\/(?:command|query)\/([^/]+))\/[^/]+\.handler\.ts$/.exec(path) ?? [];
-      if (!folder || constructed.some(name => name !== null && /^\w+Output$/.test(name))) return;
-      const handler = classes.find(({ exported }) => exported)?.name ?? `${pascalOf(useCase)}Handler`;
-      const output = files.find(file => file.path === `${folder}/${useCase}.dto.ts`)?.exports.find(({ name }) => name !== null && /^\w+Output$/.test(name))?.name;
-      const head = `${handler} builds no Output DTO, but a backend handler answers with one.`;
-      return output
-        ? `${head} Return \`new ${output}(…)\` from execute, as ${useCase}.dto.ts declares it.`
-        : `${head} Declare \`export class ${pascalOf(useCase)}Output\` in ${useCase}.dto.ts, and return \`new ${pascalOf(useCase)}Output(…)\` from execute.`;
+    check: ({ path, classes, imported }) => {
+      if (!/^src\/backend\/[^/]+\/(?:command|query)\/[^/]+\/[^/]+\.handler\.ts$/.test(path)) return;
+      const rule = "a backend handler answers with output DTOs, classes of the DTO file of its use case. Give execute the type of its answers, "
+        + "`Promise<AddMessageOutput>`, or `Promise<MessageAdded | MessageRefused>` for two, and declare each class in the DTO file.";
+      const execute = classes.flatMap(({ name, methods }) => methods.filter(method => method.name === "execute").map(method => ({ ...method, label: name === null ? "Its execute" : `${name}.execute` })))[0];
+      if (!execute) return `${fileName(path)} has no execute, but ${rule}`;
+      if (!execute.returns) return at(execute.line, `${execute.label} has no return type, but ${rule}`);
+      const dtos = new Set(imported.filter(({ from }) => /\.dto\.(js|ts)$/.test(from)).map(({ name }) => name));
+      const others = execute.returns.filter(({ name }) => name === null || !dtos.has(name)).map(({ text }) => `\`${text}\``);
+      if (others.length > 0) return at(execute.line, `${execute.label} answers with ${listOf(others)}, ${others.length > 1 ? "which are not DTOs" : "which is not a DTO"} of its use case, but ${rule}`);
     }
   },
   {
@@ -439,11 +464,11 @@ export const rules = [
     description: "A controller is an exported class …Controller that extends the Controller of the kernel.",
     on: "file",
     check: ({ path, classes }) => {
-      const stem = /^src\/backend\/[^/]+\/(?:command|query)\/[^/]+\/([^/]+)\.controller\.ts$/.exec(path)?.[1];
-      if (!stem || classes.some(({ exported, name, extends: parent }) => exported && name !== null && /^\w+Controller$/.test(name) && parent === "Controller")) return;
-      const expected = `${pascalOf(stem)}Controller`;
+      if (!/^src\/backend\/[^/]+\/(?:command|query)\/[^/]+\/[^/]+\.controller\.ts$/.test(path)
+        || classes.some(({ exported, name, extends: parent }) => exported && name !== null && /^\w+Controller$/.test(name) && parent === "Controller")) return;
+      const declared = classes.find(({ name }) => name !== null && /Controller$/.test(name)) ?? classes.find(({ extends: parent }) => parent === "Controller") ?? classes[0];
+      const expected = declared?.name ? (/Controller$/.test(declared.name) ? declared.name : `${declared.name}Controller`) : "…Controller";
       const rule = `a controller is an exported class …Controller that extends the Controller of the kernel. Write \`export class ${expected} extends Controller\`, with Controller from @ingenioz-it/caits/messaging/Controller.`;
-      const declared = classes.find(({ name }) => name !== null && /Controller$/.test(name)) ?? classes[0];
       if (!declared) return `${fileName(path)} holds no exported class …Controller, but ${rule}`;
       const name = declared.name ?? "Its class";
       if (!declared.exported) return at(declared.line, `${name} is not exported, but ${rule}`);
@@ -456,31 +481,29 @@ export const rules = [
 
   {
     name: "frontend-event-shape",
-    description: "The events of a frontend context are in event/, one file per event: event/{Event}.ts.",
+    description: "The events of a frontend context are in event/, one file per event, at its root.",
     on: "file",
     check: ({ path }) => {
       const [, context, rest] = /^(src\/frontend\/[^/]+)\/event\/(.+)$/.exec(path) ?? [];
       if (!rest || /^[A-Z]\w*\.ts$/.test(rest)) return;
-      return `${rest} is not an event file: the events of a frontend context are in event/, one file per event, named after it. Move it to ${context}/event/${pascalOf(fileName(rest).replace(/\.[^.]+$/, ""))}.ts.`;
+      return `${rest} is not an event file: the events of a frontend context are in event/, one file per event, at its root. Move it to ${context}/event/${pascalOf(fileName(rest).replace(/\.[^.]+$/, ""))}.ts.`;
     }
   },
   {
     name: "event-file-exports-its-event",
-    description: "A frontend event file exports one name only: the event, with the name of the file.",
+    description: "A frontend event file exports one name only: its event, a class, or the type that joins the events of the context.",
     on: "file",
     check: ({ path, exports }) => {
-      const [, context, event] = /^src\/frontend\/([^/]+)\/event\/(\w+)\.ts$/.exec(path) ?? [];
-      if (!event) return;
-      const file = `${event}.ts`;
-      if (exports.length === 0) return `${file} exports nothing, but an event file exports its event. Write \`export class ${event} { readonly type = "${typeOfEvent(context, event)}" as const; }\`.`;
+      const context = /^src\/frontend\/([^/]+)\/event\/\w+\.ts$/.exec(path)?.[1];
+      if (!context) return;
+      const file = fileName(path);
+      if (exports.length === 0) return `${file} exports nothing, but an event file exports its event. Write \`export class … { readonly type = "${context}.…" as const; }\`.`;
+      const names = exports.map(({ name }) => name ?? "default");
       if (exports.length > 1) {
-        const names = exports.map(({ name }) => name ?? "default");
-        const first = exports.find(({ name }) => name !== event) ?? exports[1];
-        return at(first.line, `${file} exports ${exports.length} names (${names.join(", ")}), but an event file exports only its event, ${event}. Move ${listOf(names.filter(name => name !== event))} into ${event} as a static member, or to a file of its own.`);
+        return at(exports[1].line, `${file} exports ${exports.length} names (${names.join(", ")}), but an event file exports only its event. Move ${listOf(names.slice(1))} into ${names[0]} as a static member, or to a file of its own.`);
       }
       const [exported] = exports;
-      if (exported.name !== event) return at(exported.line, `${file} exports ${exported.name ?? "a default"}, but an event file exports the event of its name, ${event}. Rename the export ${event}, or the file ${exported.name ?? "default"}.ts.`);
-      if (!["class", "type"].includes(exported.kind)) return at(exported.line, `${file} exports ${event} as ${kindOf(exported.kind)}, but an event is a class, or a type that joins events. Write \`export class ${event}\`.`);
+      if (!["class", "type"].includes(exported.kind)) return at(exported.line, `${file} exports ${names[0]} as ${kindOf(exported.kind)}, but an event is a class, or a type that joins events. Write \`export class ${names[0]}\`.`);
     }
   },
   {
@@ -488,9 +511,10 @@ export const rules = [
     description: "A frontend event class has `readonly type = \"{context}.{event}\" as const`. The store reads this type: the context, then the name of the event without the context, in kebab-case.",
     on: "file",
     check: ({ path, classes }) => {
-      const [, context, event] = /^src\/frontend\/([^/]+)\/event\/(\w+)\.ts$/.exec(path) ?? [];
-      const declared = event && classes.find(({ exported, name }) => exported && name === event);
-      if (!context || !declared) return;
+      const context = /^src\/frontend\/([^/]+)\/event\/\w+\.ts$/.exec(path)?.[1];
+      const declared = classes.find(({ exported, name }) => exported && name !== null);
+      if (!context || !declared?.name) return;
+      const event = declared.name;
       const type = typeOfEvent(context, event);
       const write = `\`readonly type = "${type}" as const\``;
       const property = declared.properties.find(({ name }) => name === "type");
@@ -586,7 +610,7 @@ export const rules = [
         if (event) return [at(lines.objectTypes[index], `${head} Build it with \`new ${event.name}(…)\`, from ${event.path}.`)];
         const [context, name] = type.split(".");
         const guess = `${pascalOf(context)}${pascalOf(name)}`;
-        return [at(lines.objectTypes[index], `${head} Write the class ${guess} in src/frontend/${context}/event/${guess}.ts, with \`readonly type = "${type}" as const\`, and build the event with \`new ${guess}(…)\`.`)];
+        return [at(lines.objectTypes[index], `${head} Write the class ${guess}, with \`readonly type = "${type}" as const\`, in a file of its own in src/frontend/${context}/event/, and build the event with \`new ${guess}(…)\`.`)];
       });
     }
   },
@@ -634,49 +658,51 @@ export const rules = [
     name: "backend-infra-shape",
     description: "The infra of a backend context holds only adapters: infra/{port}/{implementation}-{port}.ts and their tests.",
     on: "file",
-    check: ({ path, classes }) => {
-      const [, context, rest] = /^(src\/backend\/[^/]+)\/infra\/(.+)$/.exec(path) ?? [];
+    check: (file, { root }) => {
+      const [, context, rest] = /^(src\/backend\/[^/]+)\/infra\/(.+)$/.exec(file.path) ?? [];
       if (!rest || /^([a-z0-9-]+)\/[a-z0-9-]+-\1(\.test)?\.ts$/.test(rest)) return;
       const parts = rest.split("/");
-      const file = fileName(path);
+      const name = fileName(file.path);
       if (parts.length === 2 && /^[a-z0-9-]+$/.test(parts[0])) {
         const [folder] = parts;
-        const test = file.endsWith(".test.ts") ? ".test" : "";
-        const implementation = kebab(file.replace(/(\.test)?\.[^.]+$/, "")).replace(/[^a-z0-9-]+/g, "-").replace(new RegExp(`-?${folder}$`), "") || "{implementation}";
-        return `${file} is in infra/${folder}/, but an adapter is named after its implementation and its port: {implementation}-${folder}.ts. Rename it ${implementation}-${folder}${test}.ts.`;
+        const test = name.endsWith(".test.ts") ? ".test" : "";
+        const implementation = kebab(name.replace(/(\.test)?\.[^.]+$/, "")).replace(/[^a-z0-9-]+/g, "-").replace(new RegExp(`-?${folder}$`), "") || "{implementation}";
+        return `${name} is in infra/${folder}/, but an adapter is named after its implementation and its port: {implementation}-${folder}.ts. Rename it ${implementation}-${folder}${test}.ts.`;
       }
-      const port = classes.flatMap(({ implements: ports }) => ports)[0];
-      return `infra/${rest} is in no folder of a port: the infra holds one folder per port, infra/{port}/. Move it into the folder of the port that it implements${port ? `, ${context}/infra/${kebab(port)}/` : ""}.`;
+      const port = implementedPortOf(file, root);
+      return `infra/${rest} is in no folder of a port: the infra holds one folder per port, infra/{port}/. Move it into the folder of the port that it implements${port ? `, ${context}/infra/${port.folder}/` : ""}.`;
     }
   },
   {
     name: "infra-folder-implements-port",
     description: "Each folder of infra/ is for a port that the domain declares: infra/{port}/ goes with domain/port/{port}/.",
     on: "file",
-    check: ({ path, classes }, { paths }) => {
-      const adapter = adapterOf(path);
-      if (!adapter || paths.has(`${adapter.portModule}.ts`)) return;
-      const context = contextFolderOf(path);
-      const declared = (/** @type {string} */ port) => paths.has(`${context}/domain/port/${kebab(port)}/${port}.ts`);
-      const implementer = classes.find(({ implements: ports }) => ports.some(declared));
-      const port = implementer?.implements.find(declared);
-      if (implementer && port) return `${implementer.name} implements ${port}, but it is in infra/${adapter.folder}/, and the domain declares no port ${adapter.port}. Move it to ${context}/infra/${kebab(port)}/.`;
-      return `infra/${adapter.folder}/ is the folder of the port ${adapter.port}, but the domain declares no such port. Write the port in ${adapter.portModule}.ts, or move the adapter into the folder of the port that it implements.`;
+    check: (file, { paths, root }) => {
+      const adapter = adapterOf(file.path, paths);
+      if (!adapter || adapter.portModule) return;
+      const context = contextFolderOf(file.path);
+      const port = implementedPortOf(file, root);
+      if (port) return `${port.implementer} implements ${port.name}, but it is in infra/${adapter.folder}/, and the domain has no port in domain/port/${adapter.folder}/. Move it to ${context}/infra/${port.folder}/.`;
+      return `infra/${adapter.folder}/ is the folder of a port, but the domain has no port in domain/port/${adapter.folder}/. Write the port in ${context}/domain/port/${adapter.folder}/, or move the adapter into the folder of the port that it implements.`;
     }
   },
   {
     name: "adapter-implements-port",
-    description: "An adapter in infra/{port}/ implements the port of its folder (`implements Port`).",
+    description: "An adapter in infra/{port}/ implements the port of its folder: the interface that it imports from domain/port/{port}/.",
     on: "file",
-    check: ({ path, classes }, { paths }) => {
-      const adapter = adapterOf(path);
-      if (!adapter || adapter.test || !paths.has(`${adapter.portModule}.ts`) || classes.some(declared => declared.implements.includes(adapter.port))) return;
-      const declared = classes.find(({ exported }) => exported) ?? classes[0];
-      if (!declared) {
-        return `${fileName(path)} holds no class, but an adapter of infra/${adapter.folder}/ is a class that implements ${adapter.port}. Write \`export class ${pascalOf(fileName(path).replace(/\.[^.]+$/, ""))} implements ${adapter.port}\`.`;
-      }
+    check: (file, { paths, files, root }) => {
+      const adapter = adapterOf(file.path, paths);
+      if (!adapter?.portModule || adapter.test) return;
+      const imported = namesFrom(file, adapter.portModule, root);
+      if (file.classes.some(declared => declared.implements.some(name => imported.has(name)))) return;
+      const port = portNameOf(adapter.portModule, files);
+      const write = `with \`import type { ${port} } from "#context/${adapter.portModule.split("/").slice(3).join("/")}.js"\``;
+      const declared = file.classes.find(({ exported }) => exported) ?? file.classes[0];
+      if (!declared) return `${fileName(file.path)} holds no class, but an adapter of infra/${adapter.folder}/ is a class that implements ${port}. Write \`export class … implements ${port}\`, ${write}.`;
+      const name = declared.name ?? "Its class";
+      if (declared.implements.includes(port)) return at(declared.line, `${name} implements a ${port} that is not the port of infra/${adapter.folder}/, from ${adapter.portModule}.ts. Implement the port, ${write}.`);
       const others = declared.implements.length > 0 ? `; it implements ${listOf(declared.implements)}` : "";
-      return at(declared.line, `${declared.name} does not implement ${adapter.port}, the port of infra/${adapter.folder}/${others}. Write \`export class ${declared.name} implements ${adapter.port}\`, with \`import type { ${adapter.port} } from "#context/domain/port/${adapter.folder}/${adapter.port}.js"\`.`);
+      return at(declared.line, `${name} does not implement ${port}, the port of infra/${adapter.folder}/${others}. Write \`export class ${declared.name ?? "…"} implements ${port}\`, ${write}.`);
     }
   },
   {
@@ -684,12 +710,15 @@ export const rules = [
     description: "The test of an adapter runs the contract of its port. Thus all the adapters of a port do the same things.",
     on: "file",
     check: (file, { files, paths, root }) => {
-      const adapter = adapterOf(file.path);
-      if (!adapter?.test || !paths.has(`${adapter.portModule}.ts`) || importedModules(file, root).includes(`${adapter.portModule}.contract`)) return;
-      const tested = files.find(other => other.path === file.path.replace(/\.test\.ts$/, ".ts"));
-      const name = tested?.classes.find(({ exported }) => exported)?.name ?? pascalOf(fileName(file.path).replace(/\.test\.ts$/, ""));
-      const describe = files.find(other => other.path === `${adapter.portModule}.contract.ts`)?.exports.find(({ kind }) => kind === "function")?.name ?? `describe${adapter.port}Contract`;
-      return `This test does not run the contract of ${adapter.port}, so nothing proves that ${name} does what every adapter of ${adapter.port} does. Import ${describe} from "#context/domain/port/${adapter.folder}/${adapter.port}.contract.js", and call it with a factory of ${name}.`;
+      const adapter = adapterOf(file.path, paths);
+      if (!adapter?.test || !adapter.portModule || importedModules(file, root).includes(`${adapter.portModule}.contract`)) return;
+      const port = portNameOf(adapter.portModule, files);
+      const testedPath = file.path.replace(/\.test\.ts$/, ".ts");
+      const tested = files.find(other => other.path === testedPath)?.classes.find(({ exported }) => exported)?.name;
+      const name = tested ?? fileName(testedPath);
+      const describe = files.find(other => other.path === `${adapter.portModule}.contract.ts`)?.exports.find(({ kind }) => kind === "function")?.name;
+      const contract = `#context/${adapter.portModule.split("/").slice(3).join("/")}.contract.js`;
+      return `This test does not run the contract of ${port}, so nothing proves that ${name} does what every adapter of ${port} does. Import ${describe ?? "the function of the contract"} from "${contract}", and call it with a factory of ${tested ?? "the adapter"}.`;
     }
   },
 
@@ -928,8 +957,9 @@ export const rules = [
         const bindings = [...paths].sort().flatMap(path => {
           const port = path.startsWith(`${context}/`) ? portOf(path) : null;
           if (!port || port.contract) return [];
-          const adapter = adapters.filter(file => file.path.startsWith(`${context}/infra/${port.folder}/`)).flatMap(file => file.classes).find(declared => declared.implements.includes(port.name));
-          return adapter ? [`bind(${port.name}).to(${adapter.name})`] : [];
+          const name = portNameOf(port.module, files);
+          const adapter = adapters.filter(file => file.path.startsWith(`${context}/infra/${port.folder}/`)).flatMap(file => file.classes).find(declared => declared.implements.includes(name));
+          return adapter ? [`bind(${name}).to(${adapter.name})`] : [];
         });
         return { file: context, message: `${context} is a context, but it has no di.ts, so the kernel does not find it. Write ${context}/di.ts with its bindings: \`export default [${bindings.join(", ")}]\`.` };
       });
@@ -1076,9 +1106,9 @@ export const rules = [
     name: "application-imports-no-infra",
     description: "The application (the handlers and the DTOs of the use cases, and the events of the frontend) does not import the infra: a handler depends on a port of the domain, and di.ts binds the adapter.",
     on: "import",
-    check: ({ from, to, target }) => {
+    check: ({ from, to, target }, project) => {
       if (!withinContext(from, to) || from.layer !== "application" || to.layer !== "infra") return;
-      const port = portOfAdapter(target);
+      const port = portOfAdapter(target, project);
       return `The application layer must not import the infra layer (${target}). Depend on its port${port ? `, ${port.name} (${port.path}),` : " in domain/port/"} instead, and bind the adapter in ${contextFolderOf(target)}/di.ts.`;
     }
   },
@@ -1086,9 +1116,9 @@ export const rules = [
     name: "presentation-imports-no-infra",
     description: "The presentation (a controller, or the presentation of the frontend) does not import the infra: it goes through a use case, whose handler depends on a port of the domain.",
     on: "import",
-    check: ({ file, from, to, target }) => {
+    check: ({ file, from, to, target }, project) => {
       if (!withinContext(from, to) || from.layer !== "presentation" || to.layer !== "infra") return;
-      const port = portOfAdapter(target);
+      const port = portOfAdapter(target, project);
       const named = port ? `${port.name} (${port.path})` : "its port";
       if (from.side === "frontend") {
         return `The presentation layer must not import the infra layer (${target}): a view publishes events, and the handlers of the use cases call the ports. Publish an event of ${from.context}, let the store send the DTO of a use case, and let its handler depend on ${named}.`;

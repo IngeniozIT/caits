@@ -3,7 +3,6 @@ import { DomainEvent } from "../DomainEvent.js";
 import { Controller } from "../messaging/Controller.js";
 import type { EventPublisher } from "../messaging/EventPublisher.js";
 import { share, when } from "../messaging/ContextMap.js";
-import { Input } from "../messaging/Input.js";
 import { MessageBus } from "../messaging/MessageBus.js";
 import { Token } from "../Token.js";
 import { bind } from "./Container.js";
@@ -13,10 +12,10 @@ import type { RequestContext } from "./RequestContext.js";
 
 class Greeted extends DomainEvent { constructor(readonly name: string) { super(); } }
 class Arrived extends DomainEvent { constructor(readonly name: string) { super(); } }
-class Greet extends Input<string> { constructor(readonly name: string) { super(); } }
-class Remember extends Input<string> { constructor(readonly name: string) { super(); } }
-class Announce extends Input<string> { constructor(readonly name: string) { super(); } }
-class Unknown extends Input<void> {}
+class Greet { constructor(readonly name: string) {} }
+class Remember { constructor(readonly name: string) {} }
+class Announce { constructor(readonly name: string) {} }
+class Unknown {}
 type Memory = string[];
 const Memory = new Token<Memory>();
 type Greeting = string;
@@ -101,10 +100,14 @@ describe("a backend built from the bindings of its contexts", () => {
     expect(sent).toEqual([new Greet("Bob")]);
   });
 
-  test("refuses an input or a controller no context owns", async () => {
+  test("refuses an input or a controller no context owns, and tells where to write it", async () => {
     const backend = createBackend(modules());
-    await expect(backend.send(new Unknown())).rejects.toThrow("No context owns Unknown");
-    expect(() => backend.controller(class Stray {})).toThrow("No context owns Stray");
+    await expect(backend.send(new Unknown())).rejects.toThrow(
+      "No handler takes Unknown: write one next to its DTO, in <use-case>.handler.ts, with execute(input: Unknown)"
+    );
+    expect(() => backend.controller(class Stray {})).toThrow(
+      "No context has the controller Stray: write it in the folder of its use case, as <use-case>.<name>.controller.ts"
+    );
   });
 
   test("a dependency is built only when something needs it, and once", async () => {

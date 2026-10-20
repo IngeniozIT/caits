@@ -1,10 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
 import { BodyTooLargeError, Controller, InvalidInputError, MalformedBodyError, MAX_BODY_SIZE, problem, readBody, UnsupportedMediaTypeError } from "./Controller.js";
-import { Input } from "./Input.js";
 import type { MessageBus } from "./MessageBus.js";
 
-class Double extends Input<number> {
-  constructor(readonly value: number) { super(); }
+class Double {
+  constructor(readonly value: number) {}
 }
 
 class DoublingController extends Controller<Double, number> {
@@ -31,7 +30,7 @@ const ask = (text: string) => new Request("http://localhost/", { method: "POST",
 function busDoing(execute: (dto: Double) => Promise<number>) {
   const received: Double[] = [];
   const reported: unknown[] = [];
-  const bus: MessageBus = { send: <Output>(dto: Input<Output>) => { received.push(dto as Double); return execute(dto as Double) as Promise<Output>; } };
+  const bus: MessageBus = { send: (dto: object) => { received.push(dto as Double); return execute(dto as Double); } };
   return { received, reported, controller: new DoublingController(bus, error => reported.push(error)) };
 }
 

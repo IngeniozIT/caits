@@ -3,8 +3,7 @@ import type { Token } from "../Token.js";
 import { BackendEventBus, type Published } from "../messaging/BackendEventBus.js";
 import { ContextMap, type Envelope, type Translation } from "../messaging/ContextMap.js";
 import { EventPublisher } from "../messaging/EventPublisher.js";
-import { InProcessMessageBus } from "../messaging/InProcessMessageBus.js";
-import type { Input } from "../messaging/Input.js";
+import { InProcessMessageBus, UnknownInputError } from "../messaging/InProcessMessageBus.js";
 import { MessageBus } from "../messaging/MessageBus.js";
 import { ReportError, reportToConsole } from "../messaging/ReportError.js";
 import { bind, Container, type Binding, type Concrete } from "./Container.js";
@@ -40,11 +39,13 @@ export function createBackend(modules: BackendModules, options: BackendOptions =
   const owners = new Map<unknown, Context>();
   const listeners = new Set<(event: DomainEvent) => void>();
 
-  const ownerOf = (owned: Class): Context => {
+  /** The context of an input DTO, or of a controller: the error of an input is that of the message bus, which names the fix. */
+  const ownerOf = (owned: Class, refusal: () => Error): Context => {
     const context = owners.get(owned);
-    if (!context) throw new Error(`No context owns ${owned.name}`);
+    if (!context) throw refusal();
     return context;
   };
+  const ownerOfInput = (input: object): Context => ownerOf(input.constructor as Class, () => new UnknownInputError(input.constructor.name));
 
   /** The container of a request, and its message bus: each input DTO gets a new handler. */
   const requestOf = ({ container, useCases, shares }: Context, request: RequestContext) => {
@@ -58,8 +59,8 @@ export function createBackend(modules: BackendModules, options: BackendOptions =
     return { scope, bus };
   };
 
-  const send = async <Output>(input: Input<Output>, request: RequestContext = SYSTEM): Promise<Output> =>
-    requestOf(ownerOf(input.constructor as Class), request).bus.send(input);
+  const send = async (input: object, request: RequestContext = SYSTEM): Promise<unknown> =>
+    requestOf(ownerOfInput(input), request).bus.send(input);
 
   /**
    * An event that a handler publishes, in its context: the events of shared that the lines of its map that share give go to the shared
@@ -83,7 +84,7 @@ export function createBackend(modules: BackendModules, options: BackendOptions =
     event: line.event,
     inputs: (event: never, envelope: Envelope) => {
       const inputs = line.inputs(event, envelope);
-      const foreign = inputs.find(input => ownerOf(input.constructor as Class) !== contexts.get(name));
+      const foreign = inputs.find(input => ownerOfInput(input) !== contexts.get(name));
       if (foreign) throw new Error(`the context map of ${name} gives ${foreign.constructor.name}, an input of another context: a context map gives the inputs of its own context`);
       return inputs;
     }
@@ -119,7 +120,8 @@ export function createBackend(modules: BackendModules, options: BackendOptions =
     send,
     /** The controller of a context, built for a request. */
     controller: <C>(controller: abstract new (...args: never[]) => C, request: RequestContext = SYSTEM): C =>
-      requestOf(ownerOf(controller), request).scope.create(controller as unknown as Concrete<C>),
+      requestOf(ownerOf(controller, () => new Error(`No context has the controller ${controller.name}: write it in the folder of its use case, as <use-case>.<name>.controller.ts`)), request)
+        .scope.create(controller as unknown as Concrete<C>),
     /** Publishes an event of shared on the shared bus. */
     publish: (event: DomainEvent, request: RequestContext = SYSTEM) => { eventBus.publish(event, request); },
     redeliver: (published: Published) => { eventBus.redeliver(published.event, published.envelope); },

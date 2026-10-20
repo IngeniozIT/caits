@@ -1,18 +1,17 @@
 import { describe, expect, test } from "vitest";
 import { DomainEvent } from "../DomainEvent.js";
 import { ContextMap, when, type Envelope } from "./ContextMap.js";
-import { Input } from "./Input.js";
 import { BackendEventBus } from "./BackendEventBus.js";
 
 class Rang extends DomainEvent { constructor(readonly times: number) { super(); } }
 class Fell extends DomainEvent {}
-class Listen extends Input<string> { constructor(readonly times: number) { super(); } }
-class Write extends Input<string> { constructor(readonly text: string) { super(); } }
+class Listen { constructor(readonly times: number) {} }
+class Write { constructor(readonly text: string) {} }
 class Explode extends DomainEvent {}
 
-function eventBus(send: (input: Input<unknown>, envelope: Envelope) => Promise<unknown> = async input => `done: ${JSON.stringify(input)}`) {
+function eventBus(send: (input: object, envelope: Envelope) => Promise<unknown> = async input => `done: ${JSON.stringify(input)}`) {
   const reported: unknown[] = [];
-  const sent: [Input<unknown>, Envelope][] = [];
+  const sent: [object, Envelope][] = [];
   let ids = 0;
   const bus = new BackendEventBus({
     map: new ContextMap([

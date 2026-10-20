@@ -2,7 +2,7 @@ import { test as base } from "vitest";
 import { createTestApplication, type TestApplication } from "./applications.js";
 
 /** Everything an application test of the backend imports: the test of a use case, written as a scenario. */
-export { afterAll, afterEach, beforeAll, beforeEach, describe, expect, vi } from "vitest";
+export { afterAll, afterEach, assert, beforeAll, beforeEach, describe, expect, vi } from "vitest";
 export { applicationScenario } from "./applicationScenario.js";
 export type { TestApplication } from "./applications.js";
 

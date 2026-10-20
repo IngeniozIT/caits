@@ -10,4 +10,10 @@ describe("the application of the frontend tests", () => {
     expect(app.use(GreetingsGateway, gateway)).toBe(gateway);
     expect(app.get(GreetingsGateway)).toBe(gateway);
   });
+
+  test("refuses an input that no handler takes, as the message bus does", () => {
+    expect(() => createTestApplication().send(new (class Unknown {})())).toThrow(
+      "No handler takes Unknown: write one next to its DTO, in <use-case>.handler.ts, with execute(input: Unknown)"
+    );
+  });
 });

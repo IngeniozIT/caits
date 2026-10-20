@@ -58,7 +58,6 @@ function dependencies(source) {
 const CONTEXT_MODULES = {
   "virtual:kernel/backend": [
     ["bindings", "backend/*/di.ts", true],
-    ["dtos", "backend/*/{command,query}/*/*.dto.ts"],
     ["handlers", "backend/*/{command,query}/*/*.handler.ts"],
     ["controllers", "backend/*/{command,query}/*/*.controller.ts"],
     ["maps", "backend/*/context-map.ts", true]
@@ -66,7 +65,6 @@ const CONTEXT_MODULES = {
   "virtual:kernel/backend-test": [["bindings", "backend/*/test.di.ts", true]],
   "virtual:kernel/frontend": [
     ["bindings", "frontend/*/di.ts", true],
-    ["dtos", "frontend/*/{command,query}/*/*.dto.ts"],
     ["handlers", "frontend/*/{command,query}/*/*.handler.ts"],
     ["stores", "frontend/*/presentation/store/*Store.ts", true],
     ["maps", "frontend/*/context-map.ts", true]

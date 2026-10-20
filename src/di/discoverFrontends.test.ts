@@ -1,31 +1,26 @@
 import { describe, expect, test } from "vitest";
 import { share, when } from "../messaging/FrontendContextMap.js";
-import { Input } from "../messaging/Input.js";
 import { Token } from "../Token.js";
 import { discoverFrontends } from "./discoverFrontends.js";
 
-class AddCommand extends Input<void> {}
+class AddCommand {}
 class AddedNote {}
-class AddHandler {}
-class ListQuery extends Input<void> {}
-class ListHandler {}
+class AddHandler { execute(_command: AddCommand) {} }
+class ListQuery {}
+class ListHandler { execute(_query: ListQuery) {} }
 const notesStore = { initialState: {}, reduce: () => ({}), send: () => undefined };
 const otherStore = { ...notesStore };
 const bindings = [{ key: new Token("gateway"), value: "gateway" }];
 
 const root = "../../frontend";
-const nothing = { bindings: {}, dtos: {}, handlers: {}, stores: {}, maps: {} };
+const nothing = { bindings: {}, handlers: {}, stores: {}, maps: {} };
 const notes = { bindings: { [`${root}/notes/di.ts`]: bindings }, stores: { [`${root}/notes/presentation/store/notesStore.ts`]: notesStore } };
 
 describe("discovering the frontend", () => {
-  test("a context has its di.ts and its store, and a handler serves the input DTO of its use-case folder; what is not a class is left aside", () => {
+  test("a context has its di.ts and its store, and a handler serves the input DTO that its execute takes; what is not a class is left aside", () => {
     const found = discoverFrontends({
       ...nothing,
       ...notes,
-      dtos: {
-        [`${root}/notes/command/add/add.dto.ts`]: { AddCommand, AddedNote, MAX_LENGTH: 280 },
-        [`${root}/notes/query/list/list.dto.ts`]: { ListQuery }
-      },
       handlers: {
         [`${root}/notes/command/add/add.handler.ts`]: { AddHandler, retries: 2 },
         [`${root}/notes/query/list/list.handler.ts`]: { ListHandler }
@@ -60,7 +55,7 @@ describe("discovering the frontend", () => {
 
   test("a context with use cases and no store is refused: the store sends their input DTOs", () => {
     const handler = `${root}/notes/query/list/list.handler.ts`;
-    expect(() => discoverFrontends({ ...nothing, bindings: notes.bindings, dtos: { [handler.replace(".handler.ts", ".dto.ts")]: { ListQuery } }, handlers: { [handler]: { ListHandler } } }))
+    expect(() => discoverFrontends({ ...nothing, bindings: notes.bindings, handlers: { [handler]: { ListHandler } } }))
       .toThrow("the frontend notes has use cases, but no store to send their input DTOs: it declares one in presentation/store/");
   });
 
@@ -97,11 +92,12 @@ describe("discovering the frontend", () => {
       .toThrow(`${root}/ghost/query/list/list.handler.ts belongs to a frontend without a di.ts`);
   });
 
-  test("a handler needs the input DTO of its folder, and a single class", () => {
+  test("a handler needs an input DTO, which its execute takes, and a single class", () => {
     const handler = `${root}/notes/query/list/list.handler.ts`;
-    expect(() => discoverFrontends({ ...nothing, ...notes, handlers: { [handler]: { ListHandler } } }))
-      .toThrow(`${root}/notes/query/list/list.dto.ts declares one input DTO (found 0)`);
-    expect(() => discoverFrontends({ ...nothing, ...notes, dtos: { [handler.replace(".handler.ts", ".dto.ts")]: { ListQuery } }, handlers: { [handler]: { ListHandler, AddHandler } } }))
+    class Untyped { execute(_query: unknown) {} }
+    expect(() => discoverFrontends({ ...nothing, ...notes, handlers: { [handler]: { Untyped } } }))
+      .toThrow(`${handler}: Untyped.execute names no input DTO. Give its parameter the type of the input DTO, the class that the use case receives.`);
+    expect(() => discoverFrontends({ ...nothing, ...notes, handlers: { [handler]: { ListHandler, AddHandler } } }))
       .toThrow(`${handler} declares one handler (found 2)`);
   });
 });
