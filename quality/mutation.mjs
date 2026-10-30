@@ -16,6 +16,12 @@ import { painterOf } from "./terminal.mjs";
 /** The configuration of Stryker in a project: it imports the defaults of CAITS (quality/caits/stryker.mjs). */
 export const STRYKER_CONFIG = "quality/stryker.config.mjs";
 
+/** The page of the report, which Stryker writes with the report in a line of its script (quality/caits/stryker.mjs). */
+const PAGE = "reports/mutation/index.html";
+
+/** The line of the page that holds the report. */
+const PAGE_REPORT = /^( *app\.report = ).*;$/m;
+
 /** The second run of the mutants that the clock stopped: more time for each, fewer at once, and the report in JSON only. */
 const SECOND_RUN = ["--concurrency", "4", "--timeoutFactor", "3", "--reporters", "json"];
 
@@ -57,7 +63,10 @@ export async function run(args, config = STRYKER_CONFIG) {
         console.log(`\n${painterOf(process.stdout)("red", "The second run stopped before its report: the mutants that the clock stopped count as killed, as Stryker counts them. Run the mutation tests again.")}`);
         return 1;
       }
-      writeFileSync(REPORT, JSON.stringify(withSecondResults(first, readReport())));
+      const report = withSecondResults(first, readReport());
+      writeFileSync(REPORT, JSON.stringify(report));
+      // The page shows the report too: Stryker breaks each < apart, so that no text of the report ends the script.
+      if (existsSync(PAGE)) writeFileSync(PAGE, readFileSync(PAGE, "utf8").replace(PAGE_REPORT, (_, start) => `${start}${JSON.stringify(report).replaceAll("<", '<"+"')};`));
     }
     console.log("");
     return summary(["--survivors"], { breakAt: await breakOf(config) }) || status;

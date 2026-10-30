@@ -221,6 +221,7 @@ describe("the command caits", () => {
 
   describe("mutation: Stryker, then the score of each file and the survivors, also when Stryker fails", () => {
     const REPORT = "reports/mutation/mutation.json";
+    const PAGE = "reports/mutation/index.html";
     type Mutant = { status: string; statusReason?: string };
     const mutant = ({ status, statusReason }: Mutant, line: number) => ({ status, statusReason, mutatorName: "EqualityOperator", replacement: "a >= b", location: { start: { line, column: 4 }, end: { line, column: 9 } } });
     const reportOf = (...mutants: (string | Mutant)[]) => ({ files: { "src/Message.ts": { source: "line 1\nif (a > b) throw\nwhile (a > b) a++\n", mutants: mutants.map((m, index) => mutant(typeof m === "string" ? { status: m } : m, index + 1)) } } });
@@ -229,9 +230,13 @@ describe("the command caits", () => {
     /** A mutant that the counter of Stryker stopped: its code ran too many times. */
     const looping = { status: "Timeout", statusReason: "Hit limit reached (5/4)" };
 
+    /** The page of a report, as Stryker writes it: the report in a line of its script, with each < broken apart. */
+    const pageOf = (report: unknown) => `<html><body>\n    <script>\n      const app = document.querySelector('mutation-test-report-app');\n      app.report = ${JSON.stringify(report).replaceAll("<", '<"+"')};\n    </script>\n</body></html>\n`;
+
     /**
      * A project whose Stryker is a fake: it says how it was called and where the tests write their temporary files, writes there, writes
-     * the report when it has one, and exits with the code. A second report, when there is one, is that of a run that names its mutants.
+     * the report and its page when it has one, and exits with the code. A second report, when there is one, is that of a run that names
+     * its mutants, in JSON only.
      */
     function projectWithStryker(code: number, report?: unknown, { again, config = "export default {};\n" }: { again?: { code: number; report?: unknown }; config?: string } = {}) {
       const folder = newFolder();
@@ -239,10 +244,10 @@ describe("the command caits", () => {
       mkdirSync(join(folder, "quality/caits"), { recursive: true });
       writeFileSync(join(folder, "quality/stryker.config.mjs"), config);
       mkdirSync(join(folder, "node_modules/.bin"), { recursive: true });
-      const write = (written: unknown) => written === undefined ? "" : `mkdir -p reports/mutation && cat > ${REPORT} <<'EOF'\n${JSON.stringify(written)}\nEOF\n`;
+      const write = (written: unknown, file = REPORT, text = JSON.stringify(written)) => written === undefined ? "" : `mkdir -p reports/mutation && cat > ${file} <<'EOF'\n${text}\nEOF\n`;
       const run = (outcome: { code: number; report?: unknown }) => `${write(outcome.report)}exit ${outcome.code}\n`;
       const second = again === undefined ? "" : `case "$*" in *--mutate*) ${run(again).replace(/\n$/, "")} ;; esac\n`;
-      writeFileSync(join(folder, "node_modules/.bin/stryker"), `#!/bin/sh\necho "stryker $*"\necho "temporary $TMPDIR"\ntouch "$TMPDIR/left"\n${second}${run({ code, report })}`);
+      writeFileSync(join(folder, "node_modules/.bin/stryker"), `#!/bin/sh\necho "stryker $*"\necho "temporary $TMPDIR"\ntouch "$TMPDIR/left"\n${second}${report === undefined ? "" : write(report, PAGE, pageOf(report))}${run({ code, report })}`);
       chmodSync(join(folder, "node_modules/.bin/stryker"), 0o755);
       return folder;
     }
@@ -284,6 +289,9 @@ describe("the command caits", () => {
       expect(stdout).toContain("Mutation score: 66.7%  (2 killed of 3 valid mutants)\n");
       expect(stdout).toContain("L2 [survived] EqualityOperator: if (a > b) throw  →  a >= b\n");
       expect(stdout).not.toContain("L3 [survived]");
+      const page = readFileSync(join(folder, PAGE), "utf8");
+      expect(page).toContain(pageOf(reportOf("Killed", "Survived", looping)));
+      expect(page).not.toContain('"status":"Timeout","mutatorName"');
     });
 
     test("counts as killed a mutant that the clock stops again: it loops", () => {
