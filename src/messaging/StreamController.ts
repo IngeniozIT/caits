@@ -7,8 +7,11 @@ import { Request } from "./Request.js";
 import type { RequestEvents } from "./RequestEvents.js";
 import { SSE_HEADERS, sseComment, sseEvent } from "./sse.js";
 
-/** What comes to the stream: an event that a handler published, the output of the handler, or its error. */
-type Item = { readonly event: DomainEvent } | { readonly output: unknown } | { readonly error: unknown };
+/**
+ * What comes to the stream: an event that a handler published, the output of the handler, or its error; or the text of an event of a
+ * request, which came before the stream started.
+ */
+type Item = { readonly event: DomainEvent } | { readonly output: unknown } | { readonly error: unknown } | { readonly text: string };
 
 /**
  * Turns a request into an input DTO, sends it to the message bus, and streams the answer as server-sent events: what the handler
@@ -20,10 +23,11 @@ type Item = { readonly event: DomainEvent } | { readonly output: unknown } | { r
  *   stream of a request goes on, as any request that the server lets end.
  * - An EventSource, in a browser, connects again to a stream that ends, with the same GET: a feed gives its state again. It would run the
  *   use case of a stream of a request again and again: its client closes it at the last event, or the API takes POST.
- * - Until the first event or the output, an error is a response, as a Controller gives it (`toErrorResponse`). Then an error goes in the
- *   stream (`toErrorChunk`), which ends: an error of the handler, or of the controller as it writes the stream (`toChunk`,
- *   `toOutputChunk`, `stateHolds`, `toKeepAlive`). An error that `toErrorChunk` cannot write is reported, with the error of
- *   `toErrorChunk`.
+ * - Until the first event that it writes, or the output, an error is a response, as a Controller gives it (`toErrorResponse`): an event
+ *   that it does not write, as one for another context, decides nothing, since the client reads nothing of it. An event that it cannot
+ *   write is then an error too. Once the stream started, an error goes in the stream (`toErrorChunk`), which ends: an error of the
+ *   handler, or of the controller as it writes the stream (`toChunk`, `toOutputChunk`, `stateHolds`, `toKeepAlive`). An error that
+ *   `toErrorChunk` cannot write is reported, with the error of `toErrorChunk`.
  * - When the stream says nothing for `keepAliveMs`, a comment keeps the connection alive.
  * - It gives the bus the signal of the request with the DTO: the signal aborts when the client leaves, or stops reading the stream, or
  *   when the controller cannot write the stream, and the handler reads it in its RequestContext.
@@ -112,13 +116,27 @@ export abstract class StreamController<Dto extends object, Output> {
     if (!this.streams(dto)) return this.answer(dto, request);
     const queue: Item[] = [];
     let wake: () => void = () => {};
+    // The client leaves when its request aborts, or when it stops reading the stream.
+    const cancelled = new AbortController();
+    // Before the stream starts, a stream of a request writes each event as it comes: the first text that it writes starts the stream. A
+    // feed keeps its events, which its state may hold.
     let take: (item: Item) => void = item => {
-      queue.push(item);
+      let kept = item;
+      if (this.follows === "request" && "event" in item) {
+        try {
+          const text = this.toChunk(item.event);
+          if (text === undefined) return;
+          kept = { text };
+        } catch (error) {
+          // No one reads what the handler does next: it stops.
+          cancelled.abort();
+          kept = { error };
+        }
+      }
+      queue.push(kept);
       wake();
     };
     const stopListening = (this.follows === "request" ? this.requestEvents : this.contextEvents).subscribe(event => { take({ event }); });
-    // The client leaves when its request aborts, or when it stops reading the stream.
-    const cancelled = new AbortController();
     const answering = this.bus.send(dto, { signal: AbortSignal.any([request.signal, cancelled.signal]) }).then(output => ({ output }), (error: unknown) => ({ error }));
     void answering.then(item => {
       // The output of a feed is its start: it goes first, below.
@@ -142,8 +160,9 @@ export abstract class StreamController<Dto extends object, Output> {
       stopListening();
       return this.toErrorResponse(first.error, request);
     }
-    // A feed starts with its state, the output of its handler. The events that came before it may be in it already.
-    const early = new Set(this.follows === "context" ? queue : undefined);
+    // A feed starts with its state, the output of its handler. The events that came before it may be in it already. A stream of a
+    // request keeps no event before it starts: it wrote each one as it came.
+    const early = new Set(queue);
     if (this.follows === "context") queue.unshift(first);
 
     const encoder = new TextEncoder();
@@ -201,7 +220,9 @@ export abstract class StreamController<Dto extends object, Output> {
         take = item => {
           if (!open) return;
           try {
-            if ("event" in item) {
+            if ("text" in item) {
+              write(item.text);
+            } else if ("event" in item) {
               if (!(early.has(item) && this.stateHolds((first as { readonly output: Output }).output, item.event))) write(this.toChunk(item.event));
             } else if ("error" in item) {
               fail(item.error);

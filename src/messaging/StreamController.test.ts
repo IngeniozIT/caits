@@ -173,6 +173,48 @@ describe("StreamController", () => {
     expect(reported).toEqual([]);
   });
 
+  test("an event that it does not write decides nothing: an error after it is still a response, and an event that it writes starts the stream", async () => {
+    const { controller, request } = setUp((_dto, events) => {
+      events.publish(new Thought("for another context"));
+      return Promise.reject(new RangeError("refused"));
+    });
+    const refused = await controller.handle(ask("greet"));
+    expect([refused.status, await refused.text()]).toEqual([403, "refused"]);
+    expect(request.listening()).toBe(0);
+
+    const answering = setUp(async (_dto, events) => {
+      events.publish(new Thought("for another context"));
+      events.publish(new Said("Hello"));
+      return Promise.reject(new RangeError("refused"));
+    });
+    const started = await answering.controller.handle(ask("greet"));
+    expect([started.status, await started.text()]).toEqual([200, `${sseEvent("Hello")}${failure}`]);
+  });
+
+  test("an event that it cannot write before the stream starts is a response, as an error before the stream; the signal of the DTO aborts: the handler stops", async () => {
+    const { controller, reported, signals, request } = setUp((_dto, events) => {
+      events.publish(new Thought("broken"));
+      events.publish(new Said("never"));
+      return new Promise(() => {});
+    });
+    const failed = await controller.handle(ask("greet"));
+    expect([failed.status, await failed.json()]).toEqual([500, { type: "urn:caits:problem:internal-server-error", title: "Internal server error", status: 500 }]);
+    expect(reported).toEqual([new Error("cannot write")]);
+    expect(signals.map(signal => signal?.aborted)).toEqual([true]);
+    expect(request.listening()).toBe(0);
+  });
+
+  test("an event that it cannot write once an event started the stream, before the stream reads it, is an error in the stream", async () => {
+    const { controller, reported, signals } = setUp((_dto, events) => {
+      events.publish(new Said("Hello"));
+      events.publish(new Thought("broken"));
+      return new Promise(() => {});
+    });
+    expect(await text(await controller.handle(ask("greet")))).toBe(`${sseEvent("Hello")}${failure}`);
+    expect(reported).toEqual([new Error("cannot write")]);
+    expect(signals.map(signal => signal?.aborted)).toEqual([true]);
+  });
+
   test("a request that toDto refuses is a response, and sends nothing", async () => {
     const { controller, sent } = setUp(() => Promise.resolve(1));
     expect((await controller.handle(ask())).status).toBe(422);

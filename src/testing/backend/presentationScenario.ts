@@ -22,10 +22,12 @@ export class PresentationScenario {
 
   /**
    * A request with a body sends it as JSON: a string is the text of the body as it is (`"{not json"`), any other value its JSON. A
-   * FormData is sent as a form, multipart/form-data, with its files, and URLSearchParams as a form of URL encoding.
+   * FormData is sent as a form, multipart/form-data, with its files, and URLSearchParams as a form of URL encoding. The headers go with
+   * it, over the type that its body gives.
    */
-  givenTheRequest(method: string, path: string, body?: unknown): this {
-    this.request = new Request(`http://localhost${path}`, { method, signal: this.client.signal, ...bodyOf(body) });
+  givenTheRequest(method: string, path: string, body?: unknown, headers: Readonly<Record<string, string>> = {}): this {
+    const sent = bodyOf(body);
+    this.request = new Request(`http://localhost${path}`, { method, signal: this.client.signal, ...sent, headers: { ...sent.headers as Record<string, string> | undefined, ...headers } });
     return this;
   }
 
