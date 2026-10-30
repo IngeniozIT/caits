@@ -18,7 +18,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,js}"],
-      exclude: ["src/**/*.test.ts", "src/**/*.d.ts", "src/testing/**", "src/vite.js"],
+      exclude: ["src/**/*.test.ts", "src/**/*.d.ts", "src/testing/**", "src/vite.js", "src/adapter.js", "src/server/entry.ts"],
       reporter: ["text-summary", "text", "html"],
       reportsDirectory: "reports/coverage",
       thresholds: { statements: 100, branches: 100, functions: 100, lines: 100 }

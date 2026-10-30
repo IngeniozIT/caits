@@ -50,8 +50,8 @@ export function readScss(path, text, paths) {
     return isIn(STYLE_FOLDER, specifier, paths) ? `/${posix.join(STYLE_FOLDER, specifier)}` : specifier;
   });
   return {
-    imports, imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [], comments,
-    lines: { imports: found.map(({ line }) => line), constructed: [], objectTypes: [], tags: [], comments: commentLines }
+    imports, imported: [], exports: [], defaultArray: null, classes: [], constructed: [], typeReferences: [], calls: [], objectTypes: [], strings: [], tags: [], comments,
+    lines: { imports: found.map(({ line }) => line), constructed: [], typeReferences: [], objectTypes: [], tags: [], comments: commentLines }
   };
 }
 

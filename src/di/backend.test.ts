@@ -30,4 +30,38 @@ describe("the backend that serves the routes", () => {
     expect(correlations).toEqual([expect.stringMatching(uuid), expect.stringMatching(uuid)]);
     expect(new Set(correlations).size).toBe(2);
   });
+
+  test("a request that comes while the backend stops gets it, not a new backend that nothing would stop", async () => {
+    const { backend, stopBackend, startBackend } = await fresh();
+    const first = startBackend();
+    let requestsEnd: () => void = () => {};
+    const stopping = stopBackend(new Promise<void>(resolve => { requestsEnd = resolve; }));
+    expect(backend()).toBe(first);
+    requestsEnd();
+    await stopping;
+    expect(backend()).not.toBe(first);
+
+    // A backend that starts while another one stops is the one that serves once the stop ends.
+    const stoppingThird = stopBackend();
+    const fourth = startBackend();
+    await stoppingThird;
+    expect(backend()).toBe(fourth);
+    await stopBackend();
+  });
+
+  test("stops, then starts again on the next use: a new backend, with new instances", async () => {
+    const { backend, stopBackend, startBackend } = await fresh();
+    const first = startBackend();
+    expect(backend()).toBe(first);
+    let requestsEnd: () => void = () => {};
+    let stopped = false;
+    const stopping = stopBackend(new Promise<void>(resolve => { requestsEnd = resolve; })).then(() => { stopped = true; });
+    await new Promise(resolve => { setTimeout(resolve, 10); });
+    expect(stopped).toBe(false);
+    requestsEnd();
+    await stopping;
+    expect(backend()).not.toBe(first);
+    await stopBackend();
+    await stopBackend();
+  });
 });

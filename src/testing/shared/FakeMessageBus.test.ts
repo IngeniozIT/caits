@@ -76,6 +76,21 @@ describe("a fake message bus", () => {
     expect(() => bus.failTheLast(new Error("x"))).toThrow("before saying how the application fails.");
   });
 
+  test("a field of the expected message may be a matcher of Vitest, which the field of the message that comes must match", async () => {
+    const bus = new FakeMessageBus();
+    bus.expect(new Ask(expect.any(Number) as number));
+    bus.replyToTheLast("any");
+    bus.expect(new Nested({ tags: [expect.stringMatching(/^a/) as string], at: new Date(0) }));
+    bus.replyToTheLast("nested");
+    bus.expect(new Sparse({ value: null }));
+    bus.replyToTheLast("null");
+    await expect(bus.send(new Nested({ tags: ["b"], at: new Date(0) }))).rejects.toThrow("nobody expected");
+    await expect(bus.send(new Sparse({ value: 1 }))).rejects.toThrow("nobody expected");
+    await expect(bus.send(new Nested({ tags: ["abc"], at: new Date(0) }))).resolves.toBe("nested");
+    await expect(bus.send(new Ask(7))).resolves.toBe("any");
+    await expect(bus.send(new Sparse({ value: null }))).resolves.toBe("null");
+  });
+
   test("messages are compared by their content, down to nested values and dates", async () => {
     const bus = new FakeMessageBus();
     const at = (day: number) => new Date(Date.UTC(2026, 0, day));

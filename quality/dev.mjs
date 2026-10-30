@@ -4,13 +4,15 @@
 // answer, so `marko-run dev` never starts. This command gives both ports, so @marko/run does not check them: PORT, and HMR_PORT
 // (24678 when not set). Two projects can run their servers at the same time, each with its two ports.
 // If a port is already in use, the server stops with EADDRINUSE.
-// It uses the Vite configuration of the project, quality/vite.config.ts: Marko, and the plugin of CAITS.
+// It uses the Vite configuration of the project, quality/vite.config.ts: Marko, and the plugin of CAITS. The server is that of the adapter
+// of CAITS: it boots the backend, boots it again when its code changes, and stops it, and the command, on SIGTERM or SIGINT (Ctrl+C).
 // @marko/run writes the entry files of the server in the build folder. `npm run build` (`npm run check` runs it) empties dist/: the
 // server writes them in a folder of its own, else it fails at the next change of a file. @marko/vite refuses an entry file whose path
 // starts with a dot: the folder is in node_modules/, as the cache of Vite.
 import { existsSync } from "node:fs";
-import adapter from "@marko/run/adapter";
 import { loadConfigFromFile } from "vite";
+import { adapter } from "../src/adapter.js";
+import { stopOnSignals } from "../src/server/serve.js";
 import { painterOf } from "./terminal.mjs";
 
 export const VITE_CONFIG = "quality/vite.config.ts";
@@ -30,7 +32,7 @@ export async function run(args) {
   const port = Number(process.env.PORT ?? 3000);
   const hmrPort = Number(process.env.HMR_PORT ?? 24678);
   const marko = adapter();
-  // The adapter of Node, which @marko/run gives, has the two methods.
+  // The adapter of CAITS has the two methods.
   const getEntryFile = marko.getEntryFile?.bind(marko);
   const startDev = marko.startDev?.bind(marko);
   if (!getEntryFile || !startDev) throw new Error(`The adapter ${marko.name} of @marko/run cannot start a development server.`);
@@ -88,6 +90,7 @@ export async function run(args) {
   };
 
   await start();
+  stopOnSignals(async () => { await running.close(); });
 }
 
 /** Whether the Vite configuration of the project loads. When it does not, says why. */

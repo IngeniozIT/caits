@@ -55,12 +55,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:mutation": "stryker run stryker.config.json",
+    "test:mutation": "node test/mutation.js",
     "test:template": "node test/template.js",
     "check": "npm run typecheck && npm run lint && npm run test:coverage"
   },
   "dependencies": {
-    "magic-string": "^0.30.21"
+    "compression": "^1.8.2",
+    "magic-string": "^0.30.21",
+    "serve-static": "^2.2.1"
   },
   "peerDependencies": {
     "@eslint/js": "^10.0.1",
@@ -100,8 +102,9 @@
     "@marko/run": "^0.11.13",
     "@marko/type-check": "^3.2.1",
     "@playwright/test": "^1.64.0",
-    "@stryker-mutator/core": "^10.0.0",
-    "@stryker-mutator/typescript-checker": "^10.0.0",
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/typescript-checker": "^10.1.1",
+    "@stryker-mutator/vitest-runner": "^10.1.1",
     "@types/node": "^26.6.4",
     "@vitest/coverage-v8": "^5.0.3",
     "eslint": "^10.11.0",

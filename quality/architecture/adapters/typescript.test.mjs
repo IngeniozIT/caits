@@ -31,4 +31,13 @@ describe("readTypeScript", () => {
     expect(facts.objectTypes.map((type, index) => [type, facts.lines.objectTypes[index]])).toEqual([["notes.asked", 11]]);
     expect(facts.calls.filter(({ name }) => name === "skip").map(({ root, line }) => [root, line])).toEqual([["test", 13]]);
   });
+
+  test("gives the name of each type that the file names, qualified or not, its arguments too, and its line", () => {
+    const facts = readTypeScript("src/backend/notes/command/add-note/add-note.http.controller.ts", `const a: Request = x;
+let b: globalThis.Request | Map<string, Note>;
+function c(d: A.B.C): void {}
+`);
+
+    expect(facts.typeReferences.map((name, index) => [name, facts.lines.typeReferences[index]])).toEqual([["Request", 1], ["globalThis.Request", 2], ["Map", 2], ["Note", 2], ["A.B.C", 3]]);
+  });
 });

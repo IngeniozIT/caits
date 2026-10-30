@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import marko from "@marko/run/vite";
 import { defineConfig } from "vitest/config";
-import { kernel, wholeRouteTypes } from "@ingenioz-it/caits/vite";
+import { adapter, kernel, wholeRouteTypes } from "@ingenioz-it/caits/vite";
 
 /**
  * The folder of the stylesheets of the app. Sass looks in it after the folder of a stylesheet: each stylesheet of the routes loads the
@@ -10,13 +10,21 @@ import { kernel, wholeRouteTypes } from "@ingenioz-it/caits/vite";
  */
 const STYLE_FOLDER = fileURLToPath(new URL("../../src/routes/_frontend/style", import.meta.url));
 
+/**
+ * The build folder. `caits check` runs the checks at once: it gives each one a build folder of its own (CAITS_OUT_DIR), else they empty
+ * the folder of each other. So do the processes of the mutation tests, which Stryker numbers (STRYKER_MUTATOR_WORKER): the Marko plugin
+ * empties the entries of the routes in the build folder, then writes them again, as a test loads a route. Without either, the build goes
+ * in dist/, which `npm start` runs.
+ */
+const worker = process.env.STRYKER_MUTATOR_WORKER;
+const OUT_DIR = worker === undefined ? process.env.CAITS_OUT_DIR || "dist" : `node_modules/.caits/mutation/${worker}`;
+
 export default defineConfig({
-  plugins: [wholeRouteTypes(), marko(), kernel()],
-  // `caits check` runs the checks at once: it gives each one a build folder of its own (CAITS_OUT_DIR), else they empty the folder of
-  // each other. Without it, the build goes in dist/, which `npm start` runs.
+  // The adapter of CAITS: the server of `npm start` and that of `caits dev` boot the backend, start its timers, and stop it on SIGTERM.
+  plugins: [wholeRouteTypes(), marko({ adapter: adapter() }), kernel()],
   // The build keeps the names of the classes: the errors of CAITS name them, and the build would else number a class that has the name
   // of another, as a DTO of the backend and one of the frontend (`No handler takes AddMessageCommand$1`).
-  build: { outDir: process.env.CAITS_OUT_DIR || "dist", rolldownOptions: { output: { keepNames: true } } },
+  build: { outDir: OUT_DIR, rolldownOptions: { output: { keepNames: true } } },
   // The checks write their reports while the development server runs: a report is not a file of the app, and reloads no page. The
   // sandbox of the mutation tests (.stryker-tmp/) copies the project, its tsconfig.json too: the server would empty its cache at each
   // copy, and lose the dependencies that it optimized.

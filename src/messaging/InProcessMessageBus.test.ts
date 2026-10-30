@@ -14,6 +14,15 @@ describe("a message bus", () => {
     expect(await bus.send(new Greet())).toBe("hello");
   });
 
+  test("gives the handler what goes with the input: the signal of its request, which aborts when its client leaves", async () => {
+    const bus = new InProcessMessageBus();
+    bus.subscribe(Greet, (_input, { signal }) => signal);
+    const client = new AbortController();
+
+    expect(await bus.send(new Greet(), { signal: client.signal })).toBe(client.signal);
+    expect(await bus.send(new Greet())).toBeUndefined();
+  });
+
   test("refuses an input nobody handles, and names its class", async () => {
     const error = await new InProcessMessageBus().send(new Greet()).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(UnknownInputError);

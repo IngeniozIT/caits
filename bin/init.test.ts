@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { defaultsVersions, EXAMPLE_SOURCE, init, install, otherVersions, SOURCE, SUGGESTED, update, VERSION } from "./init.js";
+import { defaultsVersions, EXAMPLE_SOURCE, init, install, missingPackages, otherVersions, SOURCE, SUGGESTED, update, VERSION } from "./init.js";
 
 type PackageJson = { name: string; private: boolean; type: string; scripts: Record<string, string>; dependencies: Record<string, string>; devDependencies: Record<string, string> };
 
@@ -283,5 +283,15 @@ describe("update", () => {
     write(root, "package.json", JSON.stringify({ dependencies: { marko: SUGGESTED.dependencies.marko }, devDependencies: { vitest: "^4.0.0", other: "^1.0.0" } }));
 
     expect(otherVersions(root)).toEqual([{ key: "vitest", project: "^4.0.0", caits: SUGGESTED.devDependencies.vitest }]);
+  });
+
+  test("tells which packages that CAITS needs the project does not have, as a dependency or a development dependency", () => {
+    const root = newFolder();
+    const { "@stryker-mutator/vitest-runner": runner, ...devDependencies } = SUGGESTED.devDependencies;
+    const { marko, ...dependencies } = SUGGESTED.dependencies;
+    write(root, "package.json", JSON.stringify({ dependencies, devDependencies: { ...devDependencies, marko } }));
+
+    expect(missingPackages(root)).toEqual({ dependencies: [], devDependencies: [`@stryker-mutator/vitest-runner@${runner}`] });
+    expect(missingPackages(newFolder())).toEqual({ dependencies: [], devDependencies: [] });
   });
 });

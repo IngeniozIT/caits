@@ -162,6 +162,9 @@ function listedPackages(layer) {
   };
 }
 
+/** The controllers of the kernel, by what triggers them, and their module: a request, a timer, a request that a stream answers. */
+const KERNEL_CONTROLLERS = /** @type {const} */ ({ Controller: "messaging/Controller", TimerController: "messaging/TimerController", StreamController: "messaging/StreamController" });
+
 /** @type {Rule[]} */
 export const rules = [
   // Kernel: the package @ingenioz-it/caits builds the containers and the controllers
@@ -178,11 +181,11 @@ export const rules = [
   },
   {
     name: "controllers-built-by-kernel",
-    description: "Only the kernel makes a controller, with its dependencies. The other code asks the kernel for a controller, or sends a request through the router.",
+    description: "Only the kernel makes a controller, with its dependencies. The other code asks the kernel for a controller, or sends a request through the router. The AbortController of the platform, which stops a fetch, is not a controller of the app.",
     on: "file",
     check: ({ path, constructed, lines }) => {
       const route = locate(path).kind === "routes";
-      return constructed.flatMap((name, index) => name === null || !/^[A-Z]\w*Controller$/.test(name) ? [] : [at(lines.constructed[index],
+      return constructed.flatMap((name, index) => name === null || name === "AbortController" || !/^[A-Z]\w*Controller$/.test(name) ? [] : [at(lines.constructed[index],
         `This file builds ${name} with \`new\`, but only the kernel builds a controller, with its dependencies. ${route ? `Ask the kernel for it with \`controller(${name})\`, from @ingenioz-it/caits/di/backend.` : "Send the request through the router instead."}`)]);
     }
   },
@@ -461,19 +464,35 @@ export const rules = [
   },
   {
     name: "controller-extends-controller",
-    description: "A controller is an exported class …Controller that extends the Controller of the kernel.",
+    description: "A controller is an exported class …Controller that extends a controller of the kernel: Controller for a request, TimerController for a timer, StreamController for a stream.",
     on: "file",
     check: ({ path, classes }) => {
+      const ofKernel = (/** @type {string | null | undefined} */ parent) => typeof parent === "string" && Object.hasOwn(KERNEL_CONTROLLERS, parent);
       if (!/^src\/backend\/[^/]+\/(?:command|query)\/[^/]+\/[^/]+\.controller\.ts$/.test(path)
-        || classes.some(({ exported, name, extends: parent }) => exported && name !== null && /^\w+Controller$/.test(name) && parent === "Controller")) return;
-      const declared = classes.find(({ name }) => name !== null && /Controller$/.test(name)) ?? classes.find(({ extends: parent }) => parent === "Controller") ?? classes[0];
+        || classes.some(({ exported, name, extends: parent }) => exported && name !== null && /^\w+Controller$/.test(name) && ofKernel(parent))) return;
+      const declared = classes.find(({ name }) => name !== null && /Controller$/.test(name)) ?? classes.find(({ extends: parent }) => ofKernel(parent)) ?? classes[0];
       const expected = declared?.name ? (/Controller$/.test(declared.name) ? declared.name : `${declared.name}Controller`) : "…Controller";
-      const rule = `a controller is an exported class …Controller that extends the Controller of the kernel. Write \`export class ${expected} extends Controller\`, with Controller from @ingenioz-it/caits/messaging/Controller.`;
+      const base = /\.timer\.controller\.ts$/.test(path) ? "TimerController" : /\.stream\.controller\.ts$/.test(path) ? "StreamController" : "Controller";
+      const rule = `a controller is an exported class …Controller that extends a controller of the kernel: Controller for a request, TimerController for a timer, StreamController for a stream. Write \`export class ${expected} extends ${base}\`, with ${base} from @ingenioz-it/caits/${KERNEL_CONTROLLERS[base]}.`;
       if (!declared) return `${fileName(path)} holds no exported class …Controller, but ${rule}`;
       const name = declared.name ?? "Its class";
       if (!declared.exported) return at(declared.line, `${name} is not exported, but ${rule}`);
-      if (declared.extends !== "Controller") return at(declared.line, `${name} extends ${declared.extends ?? "nothing"}, but ${rule}`);
+      if (!ofKernel(declared.extends)) return at(declared.line, `${name} extends ${declared.extends ?? "nothing"}, but ${rule}`);
       return at(declared.line, `${name} does not end with Controller, but ${rule}`);
+    }
+  },
+  {
+    name: "controllers-read-the-request-of-caits",
+    description: "A controller reads the Request of CAITS, from @ingenioz-it/caits/messaging/Request, which gives the content of the body at each call. The Request of the web, global, reads its body once only: a controller neither names it nor builds a request.",
+    on: "file",
+    check: ({ path, imported, typeReferences, constructed, lines }) => {
+      if (!/^src\/backend\/[^/]+\/(?:command|query)\/[^/]+\/[^/]+\.controller\.ts$/.test(path)) return;
+      const ofCaits = imported.some(({ name, from }) => name === "Request" && from === "@ingenioz-it/caits/messaging/Request");
+      const named = typeReferences.flatMap((name, index) => name === "globalThis.Request" || (name === "Request" && !ofCaits) ? [at(lines.typeReferences[index],
+        `This controller names the Request of the web, which reads its body once only, but a controller reads the Request of CAITS, which gives the content of the body at each call. ${ofCaits ? "Write `Request`, which the file imports from CAITS." : "Import it: `import type { Request } from \"@ingenioz-it/caits/messaging/Request\"`."}`)] : []);
+      const built = constructed.flatMap((name, index) => name !== "Request" ? [] : [at(lines.constructed[index],
+        "This controller builds a Request, but a controller reads the request that CAITS gives to its methods. Remove `new Request(…)`.")]);
+      return [...named, ...built];
     }
   },
 

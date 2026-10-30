@@ -295,6 +295,10 @@ const cases = [
   },
   { rule: "handler-answers-output", breaks: "a handler answers with what is not a DTO", files: { [handler]: "export class AddNoteHandler { execute(): void {} }\n" } },
   { rule: "controller-extends-controller", breaks: "a controller does not extend the Controller of the kernel", files: { "src/backend/notes/command/add-note/add-note.http.controller.ts": "export class AddNoteHttpController {}\n" } },
+  {
+    rule: "controllers-read-the-request-of-caits", breaks: "a controller reads the Request of the web",
+    files: { [controller]: 'import { Controller } from "@ingenioz-it/caits/messaging/Controller";\n\nexport class AddNoteHttpController extends Controller { toDto(request: Request) {} }\n' }
+  },
   { rule: "frontend-event-shape", breaks: "the events hold a folder", files: { "src/frontend/notes/event/loaded/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\n' } },
   {
     rule: "event-file-exports-its-event", breaks: "an event file exports a constant too",
@@ -447,6 +451,7 @@ const messages = [
   { rule: "controllers-built-by-kernel", branch: "elsewhere", files: { "test/support/notes.ts": "export const make = () => new AddNoteHttpController();\n" }, expected: [
       ["test/support/notes.ts", 1, "This file builds AddNoteHttpController with `new`, but only the kernel builds a controller, with its dependencies. Send the request through the router instead."]
     ] },
+  { rule: "controllers-built-by-kernel", branch: "the AbortController of the platform", files: { "src/backend/notes/infra/clock/http-clock.ts": "export const abort = new AbortController();\n" }, expected: [] },
 
   { rule: "domain-shape", branch: "at the root of the domain", files: { "src/backend/notes/domain/helpers.ts": "export const trim = (text: string) => text.trim();\n" }, expected: [
       ["src/backend/notes/domain/helpers.ts", undefined, "helpers.ts is at the root of the domain, but the domain holds only entity/, value-object/, error/, event/ and port/. Move its code into an entity or a value object, or move the file to the folder of its kind."]
@@ -708,6 +713,13 @@ const messages = [
       ["src/backend/notes/command/edit-note/edit-note.handler.ts", 1, "The use case command/edit-note imports src/backend/notes/command/add-note/add-note.handler.js, a file of the use case command/add-note, but a use case imports nothing from another one: each changes, and goes, alone. Move what they share into src/backend/notes/domain/."]
     ]
   },
+  {
+    rule: "use-cases-isolated", branch: "a stream controller that imports the DTO of another use case, as any controller",
+    files: { "src/backend/notes/query/follow-notes/follow-notes.stream.controller.ts": 'import { ForgetNotesCommand } from "#context/command/forget-notes/forget-notes.dto.js";\n\nexport class FollowNotesStreamController extends StreamController { toDto() { return new ForgetNotesCommand(); } }\n' },
+    expected: [
+      ["src/backend/notes/query/follow-notes/follow-notes.stream.controller.ts", 1, "The use case query/follow-notes imports src/backend/notes/command/forget-notes/forget-notes.dto.js, a file of the use case command/forget-notes, but a use case imports nothing from another one: each changes, and goes, alone. Move this controller into src/backend/notes/command/forget-notes/, since a controller sends the DTO of its own use case."]
+    ]
+  },
   { rule: "use-cases-isolated", branch: "a use case of shared", files: { [handler]: 'import "#shared/command/announce/announce.dto.js";\n\nimport type { AddNoteOutput } from "./add-note.dto.js";\nexport class AddNoteHandler { execute(): AddNoteOutput { return new AddNoteOutput(); } }\n' }, expected: [
       ["src/backend/notes/command/add-note/add-note.handler.ts", 1, "The use case command/add-note imports src/backend/shared/command/announce/announce.dto.js, a file of the use case command/announce of shared, but a use case imports nothing from another one: each changes, and goes, alone. Move what they share into src/backend/notes/domain/."]
     ] },
@@ -735,17 +747,59 @@ const messages = [
   { rule: "handler-answers-output", branch: "a handler of the frontend", files: { "src/frontend/notes/query/list-notes/list-notes.handler.ts": "export class ListNotesHandler { execute(): void {} }\n" }, expected: [] },
   { rule: "controller-extends-controller", branch: "a controller of another name than its file", files: { [controller]: 'import { Controller } from "@ingenioz-it/caits/messaging/Controller";\n\nexport class PostNoteController extends Controller {}\n' }, expected: [] },
   { rule: "controller-extends-controller", branch: "a class that extends nothing", files: { [controller]: "export class AddNoteHttpController {}\n" }, expected: [
-      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 1, "AddNoteHttpController extends nothing, but a controller is an exported class …Controller that extends the Controller of the kernel. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 1, "AddNoteHttpController extends nothing, but a controller is an exported class …Controller that extends a controller of the kernel: Controller for a request, TimerController for a timer, StreamController for a stream. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
     ] },
   { rule: "controller-extends-controller", branch: "a class that is not exported", files: { [controller]: 'import { Controller } from "@ingenioz-it/caits/messaging/Controller";\n\nclass AddNoteHttpController extends Controller {}\n' }, expected: [
-      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 3, "AddNoteHttpController is not exported, but a controller is an exported class …Controller that extends the Controller of the kernel. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 3, "AddNoteHttpController is not exported, but a controller is an exported class …Controller that extends a controller of the kernel: Controller for a request, TimerController for a timer, StreamController for a stream. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
     ] },
   { rule: "controller-extends-controller", branch: "a class whose name does not end with Controller", files: { [controller]: 'import { Controller } from "@ingenioz-it/caits/messaging/Controller";\n\nexport class AddNoteHttp extends Controller {}\n' }, expected: [
-      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 3, "AddNoteHttp does not end with Controller, but a controller is an exported class …Controller that extends the Controller of the kernel. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 3, "AddNoteHttp does not end with Controller, but a controller is an exported class …Controller that extends a controller of the kernel: Controller for a request, TimerController for a timer, StreamController for a stream. Write `export class AddNoteHttpController extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
+    ] },
+  { rule: "controller-extends-controller", branch: "a timer controller", files: { "src/backend/notes/command/purge-notes/purge-notes.timer.controller.ts": 'import { TimerController } from "@ingenioz-it/caits/messaging/TimerController";\n\nexport class PurgeNotesTimerController extends TimerController {}\n' }, expected: [] },
+  { rule: "controller-extends-controller", branch: "a timer controller that extends nothing", files: { "src/backend/notes/command/purge-notes/purge-notes.timer.controller.ts": "export class PurgeNotesTimerController {}\n" }, expected: [
+      ["src/backend/notes/command/purge-notes/purge-notes.timer.controller.ts", 1, "PurgeNotesTimerController extends nothing, but a controller is an exported class …Controller that extends a controller of the kernel: Controller for a request, TimerController for a timer, StreamController for a stream. Write `export class PurgeNotesTimerController extends TimerController`, with TimerController from @ingenioz-it/caits/messaging/TimerController."]
+    ] },
+  { rule: "controller-extends-controller", branch: "a stream controller", files: { "src/backend/notes/query/follow-notes/follow-notes.stream.controller.ts": 'import { StreamController } from "@ingenioz-it/caits/messaging/StreamController";\n\nexport class FollowNotesStreamController extends StreamController {}\n' }, expected: [] },
+  { rule: "controller-extends-controller", branch: "a stream controller that extends nothing", files: { "src/backend/notes/query/follow-notes/follow-notes.stream.controller.ts": "export class FollowNotesStreamController {}\n" }, expected: [
+      ["src/backend/notes/query/follow-notes/follow-notes.stream.controller.ts", 1, "FollowNotesStreamController extends nothing, but a controller is an exported class …Controller that extends a controller of the kernel: Controller for a request, TimerController for a timer, StreamController for a stream. Write `export class FollowNotesStreamController extends StreamController`, with StreamController from @ingenioz-it/caits/messaging/StreamController."]
     ] },
   { rule: "controller-extends-controller", branch: "no class", files: { [controller]: "export const handle = () => null;\n" }, expected: [
-      ["src/backend/notes/command/add-note/add-note.http.controller.ts", undefined, "add-note.http.controller.ts holds no exported class …Controller, but a controller is an exported class …Controller that extends the Controller of the kernel. Write `export class …Controller extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", undefined, "add-note.http.controller.ts holds no exported class …Controller, but a controller is an exported class …Controller that extends a controller of the kernel: Controller for a request, TimerController for a timer, StreamController for a stream. Write `export class …Controller extends Controller`, with Controller from @ingenioz-it/caits/messaging/Controller."]
     ] },
+  { rule: "controllers-read-the-request-of-caits", branch: "the Request of CAITS", files: { [controller]: `import { Controller } from "@ingenioz-it/caits/messaging/Controller";
+import type { Request } from "@ingenioz-it/caits/messaging/Request";
+
+export class AddNoteHttpController extends Controller { toDto(request: Request) {} }
+` }, expected: [] },
+  { rule: "controllers-read-the-request-of-caits", branch: "the Request of the web, without an import", files: { [controller]: `import { Controller } from "@ingenioz-it/caits/messaging/Controller";
+
+export class AddNoteHttpController extends Controller { toDto(request: Request) {} }
+` }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 3, "This controller names the Request of the web, which reads its body once only, but a controller reads the Request of CAITS, which gives the content of the body at each call. Import it: `import type { Request } from \"@ingenioz-it/caits/messaging/Request\"`."]
+    ] },
+  { rule: "controllers-read-the-request-of-caits", branch: "a Request of another module", files: { [controller]: `import { Controller } from "@ingenioz-it/caits/messaging/Controller";
+import type { Request } from "undici";
+
+export class AddNoteHttpController extends Controller { toDto(request: Request) {} }
+` }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 4, "This controller names the Request of the web, which reads its body once only, but a controller reads the Request of CAITS, which gives the content of the body at each call. Import it: `import type { Request } from \"@ingenioz-it/caits/messaging/Request\"`."]
+    ] },
+  { rule: "controllers-read-the-request-of-caits", branch: "the Request of the web by globalThis, beside that of CAITS", files: { [controller]: `import { Controller } from "@ingenioz-it/caits/messaging/Controller";
+import type { Request } from "@ingenioz-it/caits/messaging/Request";
+
+export class AddNoteHttpController extends Controller { toDto(request: Request, other: globalThis.Request) {} }
+` }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 4, "This controller names the Request of the web, which reads its body once only, but a controller reads the Request of CAITS, which gives the content of the body at each call. Write `Request`, which the file imports from CAITS."]
+    ] },
+  { rule: "controllers-read-the-request-of-caits", branch: "a controller that builds a request", files: { [controller]: `import { Controller } from "@ingenioz-it/caits/messaging/Controller";
+
+export class AddNoteHttpController extends Controller {
+  toDto() { return new globalThis.Request("http://localhost/"); }
+}
+` }, expected: [
+      ["src/backend/notes/command/add-note/add-note.http.controller.ts", 4, "This controller builds a Request, but a controller reads the request that CAITS gives to its methods. Remove `new Request(…)`."]
+    ] },
+  { rule: "controllers-read-the-request-of-caits", branch: "an adapter that builds the Request of the web", files: { [backendAdapter]: "export const asked = (url: string): Request => new Request(url);\n" }, expected: [] },
 
   { rule: "frontend-event-shape", branch: "an event in a folder", files: { "src/frontend/notes/event/loaded/NotesLoaded.ts": 'export class NotesLoaded { readonly type = "notes.loaded" as const; }\n' }, expected: [
       ["src/frontend/notes/event/loaded/NotesLoaded.ts", undefined, "loaded/NotesLoaded.ts is not an event file: the events of a frontend context are in event/, one file per event, at its root. Move it to src/frontend/notes/event/NotesLoaded.ts."]

@@ -49,6 +49,23 @@ class Counted {
 class Shop {
   constructor(readonly counted: Counted, readonly clock: Clock) {}
 }
+/** What the resources released, in order. */
+const released: string[] = [];
+class Pool implements AsyncDisposable {
+  async [Symbol.asyncDispose](): Promise<void> { released.push("pool"); }
+}
+class Cache implements Disposable {
+  constructor(readonly pool: Pool) {}
+  [Symbol.dispose](): void { released.push("cache"); }
+}
+class Server implements AsyncDisposable {
+  constructor(readonly cache: Cache) {}
+  async [Symbol.asyncDispose](): Promise<void> { released.push("server"); }
+}
+type Socket = { readonly [Symbol.asyncDispose]: () => Promise<void> };
+const Socket = new Token<Socket>();
+const socket = (name: string): Socket => ({ [Symbol.asyncDispose]: async () => { released.push(name); } });
+const broken = (message: string) => ({ [Symbol.asyncDispose]: async () => { throw new Error(message); } });
 
 describe("a container", () => {
   test.for([["a text", "Stryker was here", '"Stryker was here"'], ["nothing", undefined, "undefined"], ["an object without a key", {}, "{}"]])(
@@ -176,6 +193,70 @@ describe("a container", () => {
       const child = new Container([bind(Car).to(Car)]).child([bind(Clock).to(FixedClock)]);
       expect(() => child.get(Car)).toThrow("Nothing is bound to Car → Clock");
       expect(() => child.check(Shop)).not.toThrow();
+    });
+  });
+
+  describe("releases what it built", () => {
+    test("the last built first, with Symbol.asyncDispose or Symbol.dispose: a dependency outlives what needs it", async () => {
+      released.length = 0;
+      const container = new Container();
+      container.get(Server);
+      await container.dispose();
+      expect(released).toEqual(["server", "cache", "pool"]);
+    });
+
+    test("what a factory made, but not a value that a binding gives: the value belongs to whoever made it", async () => {
+      released.length = 0;
+      const container = new Container([bind(Socket).toFactory(() => socket("made")), bind(Clock).toValue(socket("given") as unknown as Clock)]);
+      container.get(Socket);
+      container.get(Clock);
+      await container.dispose();
+      expect(released).toEqual(["made"]);
+    });
+
+    test("what a factory made that holds nothing, as null or a number, it lets go", async () => {
+      const container = new Container([bind(Socket).toFactory(() => null as unknown as Socket), bind(Clock).toFactory(() => 3 as unknown as Clock)]);
+      container.get(Socket);
+      container.get(Clock);
+      await expect(container.dispose()).resolves.toBeUndefined();
+    });
+
+    test("each instance once: what it released, it builds again if something needs it", async () => {
+      released.length = 0;
+      const container = new Container();
+      const first = container.get(Pool);
+      await container.dispose();
+      await container.dispose();
+      expect(released).toEqual(["pool"]);
+      expect(container.get(Pool)).not.toBe(first);
+    });
+
+    test("a child releases what it built, never what its parent built", async () => {
+      released.length = 0;
+      const parent = new Container([bind(Pool).to(Pool)]);
+      const child = parent.child([]);
+      expect(child.get(Server).cache.pool).toBe(parent.get(Pool));
+      await child.dispose();
+      expect(released).toEqual(["server", "cache"]);
+    });
+
+    test("an instance that fails does not keep the others: the errors come together, after", async () => {
+      released.length = 0;
+      const container = new Container([bind(Socket).toFactory(() => broken("socket stuck")), bind(Clock).toFactory(() => broken("clock stuck") as unknown as Clock)]);
+      container.get(Pool);
+      container.get(Socket);
+      container.get(Clock);
+      const failure = await container.dispose().then(() => undefined, (error: unknown) => error);
+      expect(released).toEqual(["pool"]);
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect((failure as AggregateError).message).toBe("2 instances failed to release");
+      expect((failure as AggregateError).errors.map(error => (error as Error).message)).toEqual(["clock stuck", "socket stuck"]);
+    });
+
+    test("one failure: its message says one", async () => {
+      const container = new Container([bind(Socket).toFactory(() => broken("socket stuck"))]);
+      container.get(Socket);
+      await expect(container.dispose()).rejects.toThrow("1 instance failed to release");
     });
   });
 

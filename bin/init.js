@@ -111,7 +111,8 @@ const TOOLS = {
   dependencies: ["@marko/run", "marko"],
   devDependencies: [
     "@eslint/js", "@marko/compiler", "@marko/type-check", "@playwright/test", "@stryker-mutator/core", "@stryker-mutator/typescript-checker",
-    "@types/node", "@vitest/coverage-v8", "eslint", "happy-dom", "sass", "typescript", "typescript-eslint", "vite", "vitest"
+    "@stryker-mutator/vitest-runner", "@types/node", "@vitest/coverage-v8", "eslint", "happy-dom", "sass", "typescript", "typescript-eslint",
+    "vite", "vitest"
   ]
 };
 /** @param {string[]} names */
@@ -251,6 +252,20 @@ export function otherVersions(root) {
     const current = dependencyOf(project, name);
     return current !== undefined && current !== caits ? [{ key: name, project: current, caits }] : [];
   }));
+}
+
+/**
+ * The packages that CAITS needs and that package.json does not have, in either section, as npm installs them: `name@version`. A new
+ * version of CAITS may need a package more: `caits update` tells which.
+ * @param {string} root
+ * @returns {{ dependencies: string[]; devDependencies: string[] }}
+ */
+export function missingPackages(root) {
+  const file = join(root, "package.json");
+  const project = existsSync(file) ? readPackage(file) : undefined;
+  /** @param {Record<string, string>} section */
+  const missing = section => project === undefined ? [] : Object.entries(section).filter(([name]) => dependencyOf(project, name) === undefined).map(([name, version]) => `${name}@${version}`);
+  return { dependencies: missing(SUGGESTED.dependencies), devDependencies: missing(SUGGESTED.devDependencies) };
 }
 
 /**

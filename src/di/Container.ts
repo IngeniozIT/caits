@@ -40,6 +40,13 @@ export function bind<T>(key: Key<T>) {
 }
 
 const describe = (route: readonly Key[]) => route.map(key => key.name).join(" → ");
+
+/** Releases an instance that holds a resource: with Symbol.asyncDispose, else Symbol.dispose. Another instance holds none. */
+async function release(instance: unknown): Promise<void> {
+  const { [Symbol.asyncDispose]: asyncDispose, [Symbol.dispose]: dispose } = Object(instance) as Partial<AsyncDisposable & Disposable>;
+  if (typeof asyncDispose === "function") await asyncDispose.call(instance);
+  else if (typeof dispose === "function") dispose.call(instance);
+}
 const isKey = (value: unknown): value is Key => value instanceof Token || typeof value === "function";
 
 /**
@@ -88,6 +95,26 @@ export class Container {
   use<T, Given extends T>(key: Key<T>, value: Given): Given {
     this.bindings.set(key, { key, value });
     return value;
+  }
+
+  /**
+   * Releases what this container built, the last built first, so a dependency outlives what needs it: each instance with
+   * Symbol.asyncDispose or Symbol.dispose. A value that a binding gives belongs to whoever made it, and what the parent built to the
+   * parent. Every instance is released, even when another fails: the errors come together, after. What it released, it builds again if
+   * something needs it.
+   */
+  async dispose(): Promise<void> {
+    const instances = [...this.built.values()].reverse();
+    this.built.clear();
+    const errors: unknown[] = [];
+    for (const instance of instances) {
+      try {
+        await release(instance);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length > 0) throw new AggregateError(errors, `${errors.length} instance${errors.length === 1 ? "" : "s"} failed to release`);
   }
 
   private resolve(key: Key, path: readonly Key[], make: boolean): unknown {

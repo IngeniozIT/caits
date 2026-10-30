@@ -1,3 +1,4 @@
+import type { Adapter } from "@marko/run/vite";
 import type { Plugin } from "vite";
 
 /** The types of vite.js, for the projects: TypeScript reads no types from the JavaScript of a package. Keep them the same as vite.js. */
@@ -12,3 +13,9 @@ export declare function kernel(options?: KernelOptions): Plugin[];
 
 /** Makes @marko/run write the types of the routes whole: `caits check` runs the checks at once, and some of them read these types. */
 export declare function wholeRouteTypes(): Plugin;
+
+/**
+ * The adapter of @marko/run for a CAITS app: the server of `npm start` (the entry that it gives to `npm run build`) and that of `caits dev`
+ * boot the backend, start its timers, and stop it on SIGTERM or SIGINT; `caits dev` boots it again when its code changes.
+ */
+export declare function adapter(): Adapter;

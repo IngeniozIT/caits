@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
-import { BodyTooLargeError, Controller, InvalidInputError, MalformedBodyError, MAX_BODY_SIZE, problem, readBody, UnsupportedMediaTypeError } from "./Controller.js";
+import { Controller, InvalidInputError, MAX_BODY_SIZE, problem } from "./Controller.js";
 import type { MessageBus } from "./MessageBus.js";
+import type { Request } from "./Request.js";
 
 class Double {
   constructor(readonly value: number) {}
@@ -8,14 +9,14 @@ class Double {
 
 class DoublingController extends Controller<Double, number> {
   protected async toDto(request: Request): Promise<Double> {
-    const text = await request.clone().text();
-    const value = Number(text);
-    if (Number.isNaN(value)) throw new InvalidInputError("not a number", { text });
+    const value = await request.content();
+    if (typeof value !== "number") throw new InvalidInputError("not a number", { value });
     return new Double(value);
   }
 
+  /** The content of the request, read again: the Request of CAITS gives it at each call. */
   protected async toResponse(output: number, request: Request): Promise<Response> {
-    return new Response(`${await request.text()} doubled is ${output}`);
+    return new Response(`${String(await request.content())} doubled is ${output}`);
   }
 
   protected override toErrorResponse(error: unknown, request: Request): Response | Promise<Response> {
@@ -25,7 +26,7 @@ class DoublingController extends Controller<Double, number> {
   }
 }
 
-const ask = (text: string) => new Request("http://localhost/", { method: "POST", body: text, headers: { "content-type": "application/json" } });
+const ask = (text: string) => new globalThis.Request("http://localhost/", { method: "POST", body: text, headers: { "content-type": "application/json" } });
 
 function busDoing(execute: (dto: Double) => Promise<number>) {
   const received: Double[] = [];
@@ -43,11 +44,21 @@ describe("Controller", () => {
     expect(received).toStrictEqual([new Double(21)]);
   });
 
+  test("gives the bus the signal of its request with the DTO: the handler sees its client leave", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const controller = new DoublingController({ send: (_dto, sending) => { signals.push(sending?.signal); return Promise.resolve(2); } });
+    const client = new AbortController();
+    await controller.handle(new globalThis.Request("http://localhost/", { method: "POST", body: "1", headers: { "content-type": "application/json" }, signal: client.signal }));
+    expect(signals.map(signal => signal?.aborted)).toEqual([false]);
+    client.abort();
+    expect(signals.map(signal => signal?.aborted)).toEqual([true]);
+  });
+
   test("a request that cannot become a DTO is refused before the bus, and the controller says what that means", async () => {
     const { received, controller } = busDoing(() => Promise.reject(new Error("never called")));
-    const response = await controller.handle(ask("abc"));
+    const response = await controller.handle(ask('"abc"'));
     expect(response.status).toBe(422);
-    expect(await response.text()).toBe('refused: not a number {"text":"abc"}');
+    expect(await response.text()).toBe('refused: not a number {"value":"abc"}');
     expect(received).toEqual([]);
   });
 
@@ -70,7 +81,7 @@ describe("Controller", () => {
   describe("the problems of the body", () => {
     class Reading extends Controller<Double, number> {
       protected async toDto(request: Request): Promise<Double> {
-        const body = await readBody(request);
+        const body = await request.content();
         if (typeof body !== "number") throw new InvalidInputError("Invalid body", [{ message: "Expected a number" }]);
         return new Double(body);
       }
@@ -90,12 +101,12 @@ describe("Controller", () => {
       expect(await refused.json()).toEqual({ type: "urn:caits:problem:invalid-request-body", title: "Invalid request body", status: 422, detail: "Invalid body", issues: [{ message: "Expected a number" }] });
     });
 
-    test("a body that does not say it is JSON is a 415 problem", async () => {
-      const response = await controller.handle(new Request("http://localhost/", { method: "POST", body: "21" }));
+    test("a body that does not say it is JSON or a form is a 415 problem", async () => {
+      const response = await controller.handle(new globalThis.Request("http://localhost/", { method: "POST", body: "21" }));
 
       expect(response.status).toBe(415);
       expect(response.headers.get("content-type")).toBe("application/problem+json");
-      expect(await response.json()).toEqual({ type: "urn:caits:problem:unsupported-media-type", title: "Unsupported media type", status: 415, detail: "The content type must be application/json" });
+      expect(await response.json()).toEqual({ type: "urn:caits:problem:unsupported-media-type", title: "Unsupported media type", status: 415, detail: "The content type must be application/json, multipart/form-data or application/x-www-form-urlencoded" });
     });
 
     test("a body larger than 1 MB is a 413 problem", async () => {
@@ -105,6 +116,33 @@ describe("Controller", () => {
       expect(response.headers.get("content-type")).toBe("application/problem+json");
       expect(await response.json()).toEqual({ type: "urn:caits:problem:request-body-too-large", title: "Request body too large", status: 413, detail: "The body is larger than 1048576 bytes" });
     });
+
+    test("a form that a browser sends from another site is a 403 problem", async () => {
+      class FormReading extends Controller<Double, number> {
+        protected async toDto(request: Request): Promise<Double> {
+          return new Double(Number((await request.content() as { value: string }).value));
+        }
+        protected toResponse(output: number): Response { return new Response(String(output)); }
+      }
+      const form = new URLSearchParams({ value: "21" });
+      const response = await new FormReading({ send: () => Promise.reject(new Error("never called")) }).handle(new globalThis.Request("http://localhost/", { method: "POST", body: form, headers: { "sec-fetch-site": "cross-site" } }));
+
+      expect(response.status).toBe(403);
+      expect(response.headers.get("content-type")).toBe("application/problem+json");
+      expect(await response.json()).toEqual({ type: "urn:caits:problem:cross-site-request", title: "Cross-site request", status: 403, detail: "A browser sent this form from another site" });
+    });
+  });
+
+  test("a controller that answers an error itself can report it, as CAITS reports the errors that it does not know", async () => {
+    class ReportingController extends DoublingController {
+      protected override toErrorResponse(error: unknown): Response {
+        this.reportError(error);
+        return new Response(null, { status: 502 });
+      }
+    }
+    const reported: unknown[] = [];
+    const response = await new ReportingController({ send: () => Promise.reject(new Error("upstream")) }, error => reported.push(error)).handle(ask("1"));
+    expect([response.status, reported]).toEqual([502, [new Error("upstream")]]);
   });
 
   test("an error is reported to the console unless the controller is told where", async () => {
@@ -126,101 +164,6 @@ describe("Controller", () => {
     expect(response.headers.get("content-type")).toBe("application/problem+json");
     expect(await response.json()).toEqual({ type: "urn:caits:problem:not-found", title: "Not found", status: 404, detail: "Nothing here.", issues: [1] });
     expect(await problem(500, "x", "X").json()).toEqual({ type: "urn:caits:problem:x", title: "X", status: 500 });
-  });
-
-  test("a refused request is a named error that carries what was wrong", () => {
-    const error = new InvalidInputError("not a number", { input: "abc" });
-    expect(error).toMatchObject({ name: "InvalidInputError", message: "not a number", details: { input: "abc" } });
-    expect(error).toBeInstanceOf(Error);
-  });
-
-  describe("reading the body", () => {
-    const post = (body: BodyInit | null, contentType?: string) => new Request("http://localhost/", { method: "POST", body, ...(contentType ? { headers: { "content-type": contentType } } : {}) });
-
-    test("reads the JSON of the body", async () => {
-      expect(await readBody(post(JSON.stringify({ text: "à relire" }), "application/json"))).toEqual({ text: "à relire" });
-      expect(await readBody(post("null", "application/json"))).toBeNull();
-    });
-
-    test.for([
-      "application/json",
-      "application/json; charset=utf-8",
-      "application/json ; charset=utf-8",
-      "Application/JSON;charset=UTF-8",
-      "application/merge-patch+json",
-      "application/vnd.api+json; ext=bulk",
-      "text/x.custom+json"
-    ])("reads a body whose content type is JSON: %s", async contentType => {
-      expect(await readBody(post('{"a":1}', contentType))).toEqual({ a: 1 });
-    });
-
-    test.for([
-      ["no content type", undefined],
-      ["text/plain, which a form of another site sends without asking the server first", "text/plain;charset=UTF-8"],
-      ["text/plain and a parameter that names JSON", "text/plain; a=application/json"],
-      ["text/plain and a parameter that ends with +json", "text/plain;x+json"],
-      ["a form", "application/x-www-form-urlencoded"],
-      ["a type that starts with the word json", "application/jsonx"],
-      ["a type with json before its end", "application/json+xml"],
-      ["a type without a subtype", "+json"],
-      ["a space in the type", "my app/x+json"],
-      ["a space in the subtype", "application/x y+json"],
-      ["two slashes", "application/x/y+json"]
-    ])("refuses a body with %s: the request must say that it sends JSON", async ([, contentType]) => {
-      const attempt = readBody(post('{"a":1}', contentType));
-      await expect(attempt).rejects.toBeInstanceOf(UnsupportedMediaTypeError);
-      await expect(attempt).rejects.toBeInstanceOf(InvalidInputError);
-      await expect(attempt).rejects.toThrow("The content type must be application/json");
-    });
-
-    test("refuses a body larger than 1 MB, and does not read the rest of it", async () => {
-      expect(MAX_BODY_SIZE).toBe(1024 * 1024);
-      let given = 0;
-      const chunk = new Uint8Array(64 * 1024).fill(32);
-      const body = new ReadableStream<Uint8Array>({ pull(controller) { given += chunk.byteLength; controller.enqueue(chunk); } });
-      const request = new Request("http://localhost/", { method: "POST", body, headers: { "content-type": "application/json" }, duplex: "half" } as RequestInit);
-
-      const attempt = readBody(request);
-
-      await expect(attempt).rejects.toBeInstanceOf(BodyTooLargeError);
-      await expect(attempt).rejects.toBeInstanceOf(InvalidInputError);
-      await expect(attempt).rejects.toThrow("The body is larger than 1048576 bytes");
-      expect(given).toBeLessThan(2 * MAX_BODY_SIZE);
-    });
-
-    test("reads a body of 1 MB exactly, or of the size that the controller gives", async () => {
-      const json = (size: number) => `"${"a".repeat(size - 2)}"`;
-      expect(await readBody(post(json(MAX_BODY_SIZE), "application/json"))).toHaveLength(MAX_BODY_SIZE - 2);
-      expect(await readBody(post(json(10), "application/json"), 10)).toBe("aaaaaaaa");
-      await expect(readBody(post(json(11), "application/json"), 10)).rejects.toThrow("The body is larger than 10 bytes");
-    });
-
-    test("reads a character whose bytes come in two chunks, and refuses a body that stops inside a character", async () => {
-      const streamOf = (...chunks: number[][]) => new Request("http://localhost/", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: new ReadableStream<Uint8Array>({ start(controller) { for (const chunk of chunks) controller.enqueue(new Uint8Array(chunk)); controller.close(); } }),
-        duplex: "half"
-      } as RequestInit);
-      const [quote, firstByteOfE, secondByteOfE] = [0x22, 0xc3, 0xa9];
-
-      expect(await readBody(streamOf([quote, firstByteOfE], [secondByteOfE, quote]))).toBe("é");
-      await expect(readBody(streamOf([0x31, firstByteOfE]))).rejects.toThrow("Invalid JSON");
-    });
-
-    test("leaves the request readable", async () => {
-      const request = post(JSON.stringify({ a: 1 }), "application/json");
-      await readBody(request);
-      expect(await request.json()).toEqual({ a: 1 });
-    });
-
-    test("refuses a body that is not JSON, with an error that says so", async () => {
-      const attempt = readBody(post("{not json", "application/json"));
-      await expect(attempt).rejects.toBeInstanceOf(MalformedBodyError);
-      await expect(attempt).rejects.toBeInstanceOf(InvalidInputError);
-      await expect(attempt).rejects.toThrow("Invalid JSON");
-      await expect(readBody(post(null, "application/json"))).rejects.toThrow("Invalid JSON");
-    });
   });
 
   test("a failure while building the response is not mistaken for a failure of the application: it is reported and answered as an internal error", async () => {

@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { NOT_RUN } from "./mutation-suite.mjs";
 import { REPORT } from "./mutation-summary.mjs";
 
 const SOURCE = "export function isLong(text: string) {\n  return text.length > 10;\n}\n";
@@ -39,14 +38,18 @@ describe("caits mutation-summary", () => {
     expect(output).toContain("L2 [survived] EqualityOperator: return text.length > 10;  →  text.length >= 10");
   });
 
-  test("does not count as killed a mutant whose tests did not run, and fails", () => {
-    const { status, output } = summary([{ status: "Killed", statusReason: "AssertionError: expected true to be false" }, { status: "Killed", statusReason: `Startup Error\n${NOT_RUN}: Vitest stopped before them (exit 1).` }]);
+  test("does not count as killed a mutant whose tests ended in an error that is not a failed test, says why, and fails", () => {
+    const { status, output } = summary([{ status: "Killed", statusReason: "AssertionError: expected true to be false" }, { status: "RuntimeError", statusReason: "Test runner crashed.\nTypeError: x is not a function" }]);
 
     expect(status).toBe(1);
     expect(output).toContain("Mutation score: 50.0%  (1 killed of 2 valid mutants)");
-    expect(output).toContain("  50%  src/long.ts  (killed 1, survived 0, no coverage 0, not tested 1)");
-    expect(output).toContain("L2 [not tested] EqualityOperator");
-    expect(output).toContain("1 mutant is not tested: the unit tests did not run, and Stryker counts it as killed. Run the mutation tests again.");
+    expect(output).toContain("  50%  src/long.ts  (killed 1, survived 0, no coverage 0, not judged 1)");
+    expect(output).toContain("L2 [not judged] EqualityOperator: return text.length > 10;  →  text.length >= 10\n          Test runner crashed.\n");
+    expect(output).toContain("1 mutant is not judged: its tests ended in an error that is not a failed test, and Stryker leaves it out of the score. Run the mutation tests again; when it comes back, write a test that sees what it changes.");
+  });
+
+  test("passes under 100% when nothing fails: the threshold is that of Stryker", () => {
+    expect(summary([{ status: "Killed" }, { status: "Survived" }, { status: "CompileError" }]).status).toBe(0);
   });
 
   describe("in a terminal", () => {
@@ -72,10 +75,11 @@ describe("caits mutation-summary", () => {
       expect(output).toContain(`${green(" 100%")}  ${cyan("src/long.ts")}`);
     });
 
-    test("colors in red the mutants that are not tested", () => {
-      const { output } = summary([{ status: "Killed", statusReason: `${NOT_RUN}: Vitest stopped before them (exit 1).` }], true);
+    test("colors in red the mutants that are not judged, and dims why", () => {
+      const { output } = summary([{ status: "RuntimeError", statusReason: "Test runner crashed." }, { status: "RuntimeError" }], true);
 
-      expect(output).toContain(red("1 mutant is not tested: the unit tests did not run, and Stryker counts it as killed. Run the mutation tests again. Why they did not run: reports/mutation/index.html."));
+      expect(output).toContain(`${red("[not judged]")} ${yellow("EqualityOperator")}: return text.length > 10;  ${dim("→")}  text.length >= 10\n          ${dim("Test runner crashed.")}\n`);
+      expect(output).toContain(red("2 mutants are not judged: their tests ended in an error that is not a failed test, and Stryker leaves them out of the score. Run the mutation tests again; when one comes back, write a test that sees what it changes."));
     });
   });
 });

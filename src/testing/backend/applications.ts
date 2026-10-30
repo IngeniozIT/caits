@@ -47,7 +47,10 @@ export function createTestApplication() {
   backend.subscribeToContexts(event => { published.push(event); });
 
   return {
-    /** Sends an input DTO to the message bus of the context that handles it. */
+    /**
+     * Sends an input DTO to the message bus of the context that handles it: with the signal of a client, `send(dto, { signal })`, its
+     * handler sees the client leave when the test aborts it.
+     */
     send: backend.send,
     /** The dependency with this token, built now if no handler needed it before. */
     get: backend.get,

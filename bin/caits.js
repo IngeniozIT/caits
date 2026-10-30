@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { commandOf, painterOf } from "../quality/terminal.mjs";
-import { defaultsVersions, DEFAULTS_FOLDER, EXAMPLE_SOURCE, init, install, otherVersions, SOURCE, update, VERSION } from "./init.js";
+import { defaultsVersions, DEFAULTS_FOLDER, EXAMPLE_SOURCE, init, install, missingPackages, otherVersions, SOURCE, update, VERSION } from "./init.js";
 
 const USAGE = `Usage: caits <command>
 
@@ -24,16 +24,17 @@ const USAGE = `Usage: caits <command>
   check <script>…      Runs the npm scripts of the checks at once. Shows the output of the checks that fail, and only theirs.
   architecture         Checks the rules of quality/architecture.mjs.
   e2e                  Runs the end-to-end tests on the production build.
-  mutation             Runs the mutation tests (Stryker), then gives the score of each file and the mutants that survived. Its exit
-                       code is that of Stryker, or 1 when a mutant was not tested (its unit tests did not run).
-  mutation-summary     Gives the mutation score of each file (--survivors: the mutants that survived, and those not tested).
-  mutation-suite       The unit tests, as Stryker runs them for each mutant.
+  mutation             Runs the mutation tests (Stryker), runs again with more time the mutants that the clock stopped, then gives
+                       the score of each file and the mutants that survived. Its exit code is that of Stryker, or 1 when a mutant
+                       is not judged (its tests ended in an error that is not a failed test), or when the second run puts the
+                       score under the threshold.
+  mutation-summary     Gives the mutation score of each file (--survivors: the mutants that survived, and those not judged).
 
   --help, -h           Shows this help, also after a command (caits init --help).
   --version            Shows the version of CAITS.`;
 
 /** The commands that run a tool of quality/: their code is in the folder quality/ of CAITS. */
-const TOOLS = new Set(["dev", "check", "architecture", "e2e", "mutation", "mutation-summary", "mutation-suite"]);
+const TOOLS = new Set(["dev", "check", "architecture", "e2e", "mutation", "mutation-summary"]);
 
 /** The options of `caits init`. */
 const INIT_OPTIONS = /** @type {const} */ ({ caits: { type: "string" }, example: { type: "boolean" }, "example-source": { type: "string" }, "no-install": { type: "boolean" } });
@@ -85,7 +86,7 @@ async function main(command, args) {
   if (command === "init") return runInit(args);
   if (command === "update") return runUpdate(args);
   if (TOOLS.has(command)) {
-    if (command !== "mutation-suite") warnOfOldDefaults(process.cwd());
+    warnOfOldDefaults(process.cwd());
     // The tools load Vite, Marko and the other packages of the project: only the command that runs imports its code.
     const tool = /** @type {{ run: (args: string[]) => Promise<number | void> }} */ (await importTool(command));
     return tool.run(args);
@@ -171,6 +172,7 @@ function runUpdate(args) {
   const written = update(process.cwd());
   console.log(paint("green", `CAITS ${VERSION}: wrote ${count(written.length, "file")} in ${DEFAULTS_FOLDER}/.`));
   printOtherVersions(process.cwd());
+  printMissingPackages(process.cwd());
   return 0;
 }
 
@@ -180,6 +182,17 @@ function printOtherVersions(root) {
   if (others.length === 0) return;
   console.log(paint("yellow", `CAITS ${VERSION} suggests other versions of these packages. Change them in package.json if you agree:`));
   for (const { key, project, caits } of others) console.log(`  ${key}: ${JSON.stringify(project)} (CAITS suggests ${JSON.stringify(caits)})`);
+}
+
+/** @param {string} root */
+function printMissingPackages(root) {
+  const { dependencies, devDependencies } = missingPackages(root);
+  if (dependencies.length + devDependencies.length === 0) return;
+  console.log(paint("yellow", `CAITS ${VERSION} needs packages that package.json does not have. Add them:`));
+  /** @param {string[]} names */
+  const quoted = names => names.map(name => `"${name}"`).join(" ");
+  if (dependencies.length > 0) console.log(`  ${paint("cyan", `npm install ${quoted(dependencies)}`)}`);
+  if (devDependencies.length > 0) console.log(`  ${paint("cyan", `npm install --save-dev ${quoted(devDependencies)}`)}`);
 }
 
 /** @param {string} root */

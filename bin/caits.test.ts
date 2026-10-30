@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
-import { VERSION } from "./init.js";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { SUGGESTED, VERSION } from "./init.js";
 
 const CAITS = join(import.meta.dirname, "caits.js");
 
@@ -174,6 +174,16 @@ describe("the command caits", () => {
       expect(stdout).toMatch(new RegExp(`^${green(`CAITS ${VERSION}: wrote \\d+ files in quality/caits/\\.`).replaceAll("[", "\\[")}\\n`));
       expect(stdout).toContain(`${yellow(`CAITS ${VERSION} suggests other versions of these packages. Change them in package.json if you agree:`)}\n  vitest: "^1.0.0"`);
     });
+
+    test("update: the packages that package.json lacks in yellow, and the commands that add them in cyan", () => {
+      const folder = newFolder();
+      writeFileSync(join(folder, "package.json"), JSON.stringify({ devDependencies: { vitest: "^1.0.0" } }));
+
+      const { stdout } = caitsInColor(folder, "update");
+
+      expect(stdout).toContain(`${yellow(`CAITS ${VERSION} needs packages that package.json does not have. Add them:`)}\n  ${cyan(`npm install "@marko/run@${SUGGESTED.dependencies["@marko/run"]}" "marko@${SUGGESTED.dependencies.marko}"`)}\n  \u001b[36mnpm install --save-dev "@eslint/js@`);
+      expect(stdout).toContain(`"@stryker-mutator/vitest-runner@${SUGGESTED.devDependencies["@stryker-mutator/vitest-runner"]}"`);
+    });
   });
 
   describe("architecture: the packages that each layer may import", () => {
@@ -211,18 +221,28 @@ describe("the command caits", () => {
 
   describe("mutation: Stryker, then the score of each file and the survivors, also when Stryker fails", () => {
     const REPORT = "reports/mutation/mutation.json";
-    const mutant = (status: string, line: number) => ({ status, mutatorName: "EqualityOperator", replacement: "a >= b", location: { start: { line } } });
-    const reportOf = (...statuses: string[]) => ({ files: { "src/Message.ts": { source: "line 1\nif (a > b) throw\n", mutants: statuses.map((status, index) => mutant(status, index + 1)) } } });
+    type Mutant = { status: string; statusReason?: string };
+    const mutant = ({ status, statusReason }: Mutant, line: number) => ({ status, statusReason, mutatorName: "EqualityOperator", replacement: "a >= b", location: { start: { line, column: 4 }, end: { line, column: 9 } } });
+    const reportOf = (...mutants: (string | Mutant)[]) => ({ files: { "src/Message.ts": { source: "line 1\nif (a > b) throw\nwhile (a > b) a++\n", mutants: mutants.map((m, index) => mutant(typeof m === "string" ? { status: m } : m, index + 1)) } } });
+    /** A mutant that the clock of Stryker stopped: Stryker gives no reason. */
+    const late = { status: "Timeout" };
+    /** A mutant that the counter of Stryker stopped: its code ran too many times. */
+    const looping = { status: "Timeout", statusReason: "Hit limit reached (5/4)" };
 
-    /** A project whose Stryker is a fake: it says how it was called, writes the report when it has one, and exits with the code. */
-    function projectWithStryker(code: number, report?: unknown) {
+    /**
+     * A project whose Stryker is a fake: it says how it was called and where the tests write their temporary files, writes there, writes
+     * the report when it has one, and exits with the code. A second report, when there is one, is that of a run that names its mutants.
+     */
+    function projectWithStryker(code: number, report?: unknown, { again, config = "export default {};\n" }: { again?: { code: number; report?: unknown }; config?: string } = {}) {
       const folder = newFolder();
       writeFileSync(join(folder, "package.json"), `{ "name": "app", "private": true }\n`);
       mkdirSync(join(folder, "quality/caits"), { recursive: true });
-      writeFileSync(join(folder, "quality/stryker.config.mjs"), "export default {};\n");
+      writeFileSync(join(folder, "quality/stryker.config.mjs"), config);
       mkdirSync(join(folder, "node_modules/.bin"), { recursive: true });
-      const write = report === undefined ? "" : `mkdir -p reports/mutation && cat > ${REPORT} <<'EOF'\n${JSON.stringify(report)}\nEOF\n`;
-      writeFileSync(join(folder, "node_modules/.bin/stryker"), `#!/bin/sh\necho "stryker $*"\n${write}exit ${code}\n`);
+      const write = (written: unknown) => written === undefined ? "" : `mkdir -p reports/mutation && cat > ${REPORT} <<'EOF'\n${JSON.stringify(written)}\nEOF\n`;
+      const run = (outcome: { code: number; report?: unknown }) => `${write(outcome.report)}exit ${outcome.code}\n`;
+      const second = again === undefined ? "" : `case "$*" in *--mutate*) ${run(again).replace(/\n$/, "")} ;; esac\n`;
+      writeFileSync(join(folder, "node_modules/.bin/stryker"), `#!/bin/sh\necho "stryker $*"\necho "temporary $TMPDIR"\ntouch "$TMPDIR/left"\n${second}${run({ code, report })}`);
       chmodSync(join(folder, "node_modules/.bin/stryker"), 0o755);
       return folder;
     }
@@ -239,14 +259,84 @@ describe("the command caits", () => {
       expect(stdout.indexOf("stryker run")).toBeLessThan(stdout.indexOf("Mutation score"));
     });
 
-    test("at 100%, gives the score of each file, and passes", () => {
-      const folder = projectWithStryker(0, reportOf("Killed", "Timeout"));
+    test("at 100%, gives the score of each file, and passes: a mutant that the counter of Stryker stopped loops, and is killed", () => {
+      const folder = projectWithStryker(0, reportOf("Killed", looping));
 
       const { status, stdout } = caits(folder, "mutation");
 
       expect(status).toBe(0);
       expect(stdout).toContain("Mutation score: 100.0%  (2 killed of 2 valid mutants)\n");
       expect(stdout).not.toContain("[survived]");
+      expect(stdout.match(/stryker run/g)).toHaveLength(1);
+    });
+
+    test("runs again, a few at once and with more time, the mutants that the clock stopped: their second result counts, under the threshold of the project", () => {
+      const folder = projectWithStryker(0, reportOf("Killed", late, looping), {
+        again: { code: 1, report: reportOf("Killed", "Survived") },
+        config: "export default { thresholds: { break: 100 } };\n"
+      });
+
+      const { status, stdout } = caits(folder, "mutation");
+
+      expect(status).toBe(1);
+      expect(stdout).toContain("1 mutant ran out of time on the clock, which the load of the machine slows: it runs again, with more time and fewer tests at once.\n");
+      expect(stdout).toContain("stryker run quality/stryker.config.mjs --mutate src/Message.ts:2-2 --concurrency 4 --timeoutFactor 3 --reporters json\n");
+      expect(stdout).toContain("Mutation score: 66.7%  (2 killed of 3 valid mutants)\n");
+      expect(stdout).toContain("L2 [survived] EqualityOperator: if (a > b) throw  →  a >= b\n");
+      expect(stdout).not.toContain("L3 [survived]");
+    });
+
+    test("counts as killed a mutant that the clock stops again: it loops", () => {
+      const folder = projectWithStryker(0, reportOf(late, late), { again: { code: 0, report: reportOf(late, "Killed") }, config: "export default { thresholds: { break: 100 } };\n" });
+
+      const { status, stdout } = caits(folder, "mutation");
+
+      expect(status).toBe(0);
+      expect(stdout).toContain("2 mutants ran out of time on the clock, which the load of the machine slows: they run again, with more time and fewer tests at once.\n");
+      expect(stdout).toContain("--mutate src/Message.ts:1-1,src/Message.ts:2-2 ");
+      expect(stdout).toContain("Mutation score: 100.0%  (2 killed of 2 valid mutants)\n");
+    });
+
+    test("when the second run stops before its report, keeps the first, and fails", () => {
+      const folder = projectWithStryker(0, reportOf("Killed", late), { again: { code: 2 } });
+
+      const { status, stdout } = caits(folder, "mutation");
+
+      expect(status).toBe(1);
+      expect(stdout).toContain("Mutation score: 100.0%  (2 killed of 2 valid mutants)\n");
+      expect(stdout).toContain("The second run stopped before its report: the mutants that the clock stopped count as killed, as Stryker counts them. Run the mutation tests again.\n");
+      expect(JSON.parse(readFileSync(join(folder, REPORT), "utf8"))).toEqual(reportOf("Killed", late));
+    });
+
+    test("gives the tests a temporary folder of its own, which goes away at its end, with what a stopped test left in it", () => {
+      const temporary = newFolder();
+      vi.stubEnv("TMPDIR", temporary);
+      try {
+        const { stdout } = caits(projectWithStryker(0, reportOf("Killed")), "mutation");
+
+        const folder = /^temporary (.+)$/m.exec(stdout)?.[1] ?? "";
+        expect(folder.startsWith(join(temporary, "caits-mutation-"))).toBe(true);
+        expect(existsSync(folder)).toBe(false);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    test("at its start, removes the temporary folders of the runs that stopped before their end", () => {
+      const folder = projectWithStryker(0, reportOf("Killed"));
+      const temporary = newFolder();
+      const stopped = spawnSync(process.execPath, ["-e", ""]).pid;
+      for (const run of [`caits-mutation-${stopped}-last`, `caits-mutation-${process.pid}-running`, "other"]) mkdirSync(join(temporary, run));
+      vi.stubEnv("TMPDIR", temporary);
+      try {
+        expect(caits(folder, "mutation").status).toBe(0);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      const left = readdirSync(temporary);
+      expect(left.filter(entry => entry.startsWith("caits-mutation-"))).toEqual([`caits-mutation-${process.pid}-running`]);
+      expect(left).toContain("other");
     });
 
     test("gives its options to Stryker", () => {

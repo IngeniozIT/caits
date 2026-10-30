@@ -1,6 +1,11 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "testRunner": "command",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts",
+    "related": false,
+    "pool": "forks"
+  },
   "checkers": [
     "typescript"
   ],
@@ -12,6 +17,8 @@
     "!src/**/*.d.ts",
     "!src/testing/**",
     "!src/vite.js",
+    "!src/adapter.js",
+    "!src/server/entry.ts",
     "!src/di/discovered.ts",
     "!src/di/discoveredFrontends.ts"
   ],
@@ -35,10 +42,6 @@
   },
   "concurrency": "100%",
   "timeoutMS": 15000,
-  "coverageAnalysis": "off",
-  "commandRunner": {
-    "command": "npx vitest run --reporter=dot --bail=1 src/"
-  },
   "ignorePatterns": [
     "reports"
   ]

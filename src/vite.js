@@ -5,6 +5,8 @@ import MagicString from "magic-string";
 import { normalizePath, parseSync } from "vite";
 import { declareDependencies } from "./di/declareDependencies.js";
 
+export { adapter } from "./adapter.js";
+
 /** @import { Plugin } from "vite" */
 /** @import { KernelOptions } from "./vite.types.js" */
 

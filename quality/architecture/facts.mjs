@@ -31,13 +31,13 @@
 /**
  * The lines of the facts that are strings, in the same order: `lines.imports[2]` is the line of `imports[2]`. A tag that Marko finds
  * without an import counts as an import, at the line of the tag.
- * @typedef {{ imports: number[]; constructed: number[]; objectTypes: number[]; tags: number[]; comments: number[] }} Lines
+ * @typedef {{ imports: number[]; constructed: number[]; typeReferences: number[]; objectTypes: number[]; tags: number[]; comments: number[] }} Lines
  */
 /**
  * What the rules read in a file: see factsOf.
  * @typedef {{
  *   imports: string[]; imported: Imported[]; exports: Export[]; defaultArray: Item[] | null; classes: Class[]; constructed: (string | null)[];
- *   calls: Call[]; objectTypes: string[]; strings: string[]; tags: string[]; comments: string[]; lines: Lines
+ *   typeReferences: string[]; calls: Call[]; objectTypes: string[]; strings: string[]; tags: string[]; comments: string[]; lines: Lines
  * }} Facts
  */
 /** A comment that a parser gives apart from the tree: its text, and where it starts in the file. @typedef {{ value: string; start: number }} LooseComment */
@@ -81,6 +81,8 @@ const rootOf = node => {
   while (node?.type === "MemberExpression" || node?.type === "CallExpression") node = node.type === "MemberExpression" ? node.object : node.callee;
   return node?.type === "Identifier" ? node.name : null;
 };
+/** The name of a type, qualified or not: `Note`, `globalThis.Request`. @type {(node: Node) => string} */
+const typeNameOf = node => node.type === "TSQualifiedName" ? `${typeNameOf(node.left)}.${typeNameOf(node.right)}` : node.name;
 /** @type {(node: Node) => string | null} */
 const keyOf = node => node.key?.name ?? stringOf(node.key);
 
@@ -164,12 +166,14 @@ const classOf = (node, exported, lineOf, text) => ({
  *   call takes first (X), and the classes that the item builds, or null;
  * - classes: the classes, with what they extend and implement, their properties, and the return types of their methods;
  * - constructed: the class of each `new X(…)`;
+ * - typeReferences: the name of each type that the file names (`Note`, `globalThis.Request`), its arguments too (`Map<string, Note>` names Map
+ *   and Note);
  * - calls: each call, with the value of its arguments that are strings (null for the others);
  * - objectTypes: the value of each `type: "…"` of an object literal;
  * - strings: every string of the code (comments and import paths aside);
  * - tags: the name of each Marko tag (Marko only);
  * - comments: the text of each comment: those that the parser gives, those that the tree holds, and the comments of a Marko template;
- * - lines: the line of each import, `new`, `type: "…"`, tag and comment. The facts that are objects have their own line.
+ * - lines: the line of each import, `new`, type that the file names, `type: "…"`, tag and comment. The facts that are objects have their own line.
  * A node of oxc has its offset in the text (start); a node of Babel has its line too (loc), which counts from the first line of the file.
  * @param {Node} program
  * @param {string} text
@@ -182,9 +186,9 @@ export function factsOf(program, text, comments = []) {
   const lineOf = node => node.loc?.start?.line ?? lineAt(node.start ?? 0);
   /** @type {Facts} */
   const facts = {
-    imports: [], imported: [], exports: [], defaultArray: null, classes: [], constructed: [], calls: [], objectTypes: [], strings: [], tags: [],
-    comments: comments.map(({ value }) => value),
-    lines: { imports: [], constructed: [], objectTypes: [], tags: [], comments: comments.map(({ start }) => lineAt(start)) }
+    imports: [], imported: [], exports: [], defaultArray: null, classes: [], constructed: [], typeReferences: [], calls: [], objectTypes: [], strings: [],
+    tags: [], comments: comments.map(({ value }) => value),
+    lines: { imports: [], constructed: [], typeReferences: [], objectTypes: [], tags: [], comments: comments.map(({ start }) => lineAt(start)) }
   };
   /** @type {(source: string, node: Node) => void} */
   const addImport = (source, node) => {
@@ -234,6 +238,10 @@ export function factsOf(program, text, comments = []) {
       facts.constructed.push(nameOf(node.callee));
       facts.lines.constructed.push(lineOf(node));
       for (const { node: element, item } of items) if (element.start <= node.start && node.end <= element.end) item.constructed.push(nameOf(node.callee));
+    }
+    if (node.type === "TSTypeReference") {
+      facts.typeReferences.push(typeNameOf(node.typeName));
+      facts.lines.typeReferences.push(lineOf(node));
     }
     if (node.type === "CallExpression") facts.calls.push({ name: nameOf(node.callee), root: rootOf(node.callee), args: node.arguments.map(stringOf), line: lineOf(node) });
     if (node.type === "ObjectExpression") {
