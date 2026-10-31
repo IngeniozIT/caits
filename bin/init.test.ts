@@ -3,9 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { defaultsVersions, EXAMPLE_SOURCE, init, install, missingPackages, otherVersions, SOURCE, SUGGESTED, update, VERSION } from "./init.js";
+import { defaultsVersions, EXAMPLE_SOURCE, init, install, missingPackages, missingValues, otherVersions, SOURCE, SUGGESTED, update, VERSION } from "./init.js";
 
-type PackageJson = { name: string; private: boolean; type: string; scripts: Record<string, string>; dependencies: Record<string, string>; devDependencies: Record<string, string> };
+type PackageJson = {
+  name: string; private: boolean; type: string; scripts: Record<string, string>; dependencies: Record<string, string>; devDependencies: Record<string, string>;
+  overrides: Record<string, string>; allowScripts: Record<string, boolean>;
+};
 
 const folders: string[] = [];
 afterEach(() => { for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true }); });
@@ -54,6 +57,17 @@ describe("init", () => {
       scripts: { check: "caits check typecheck lint:code lint:architecture test:coverage test:mutation test:e2e" },
       dependencies: { marko: SUGGESTED.dependencies.marko },
       devDependencies: { "@ingenioz-it/caits": "github:owner/caits#v9", sass: SUGGESTED.devDependencies.sass, typescript: SUGGESTED.devDependencies.typescript }
+    });
+  });
+
+  test("overrides the versions that the tools ask for and that have an advisory, and denies the install scripts that the tools work without", () => {
+    const root = newFolder();
+
+    init(root, "caits");
+
+    expect(packageOf(root)).toMatchObject({
+      overrides: { glob: "^14.0.3", minimatch: "^11.0.3", qs: "^6.17.1" },
+      allowScripts: { "@parcel/watcher": false, esbuild: false }
     });
   });
 
@@ -278,11 +292,33 @@ describe("update", () => {
     expect(defaultsVersions(root)).toEqual(expect.arrayContaining([VERSION, "0.0.1"]));
   });
 
-  test("tells which packages of the project have another version than the one that CAITS suggests, and changes none", () => {
+  test("tells which packages of the project have another version than the one that CAITS suggests, or another override, and changes none", () => {
     const root = newFolder();
-    write(root, "package.json", JSON.stringify({ dependencies: { marko: SUGGESTED.dependencies.marko }, devDependencies: { vitest: "^4.0.0", other: "^1.0.0" } }));
+    write(root, "package.json", JSON.stringify({
+      dependencies: { marko: SUGGESTED.dependencies.marko },
+      devDependencies: { vitest: "^4.0.0", other: "^1.0.0" },
+      overrides: { minimatch: "^11.0.1", qs: "^6.17.1", other: "^2.0.0" }
+    }));
 
-    expect(otherVersions(root)).toEqual([{ key: "vitest", project: "^4.0.0", caits: SUGGESTED.devDependencies.vitest }]);
+    expect(otherVersions(root)).toEqual([
+      { key: "vitest", project: "^4.0.0", caits: SUGGESTED.devDependencies.vitest },
+      { key: "overrides.minimatch", project: "^11.0.1", caits: "^11.0.3" }
+    ]);
+  });
+
+  test("tells which values that CAITS needs package.json does not have, and changes none: the scripts, the overrides, the install scripts", () => {
+    const root = newFolder();
+    init(root, "caits");
+    const { scripts: { tdd, ...scripts }, overrides: { qs, ...overrides }, allowScripts, ...project } = packageOf(root);
+    write(root, "package.json", JSON.stringify({ ...project, scripts, overrides }));
+
+    expect(missingValues(root)).toEqual([
+      { key: "scripts", name: "tdd", value: tdd },
+      { key: "overrides", name: "qs", value: qs },
+      { key: "allowScripts", name: "@parcel/watcher", value: allowScripts["@parcel/watcher"] },
+      { key: "allowScripts", name: "esbuild", value: allowScripts.esbuild }
+    ]);
+    expect(missingValues(newFolder())).toEqual([]);
   });
 
   test("tells which packages that CAITS needs the project does not have, as a dependency or a development dependency", () => {

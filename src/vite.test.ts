@@ -19,6 +19,28 @@ function newFolder(): string {
   return folder;
 }
 
+describe("kernel: what the development server watches", () => {
+  test("not the reports of the checks, nor the sandbox of the mutation tests, given by a plugin: the configuration has no server", () => {
+    const watch = kernel().find(plugin => plugin.name === "kernel-watch") as Plugin;
+
+    expect((watch.config as () => unknown)()).toEqual({ server: { watch: { ignored: ["**/reports/**", "**/.stryker-tmp/**"] } } });
+  });
+});
+
+describe("kernel: the files that @marko/run generates", () => {
+  test("have no source map, after the transforms of the other plugins: they are not on the disk, where Vite would look for their source", () => {
+    const generated = kernel().find(plugin => plugin.name === "kernel-generated-files") as Plugin;
+    const transform = generated.transform as (code: string, id: string) => unknown;
+
+    expect(generated.enforce).toBe("post");
+    expect(transform("export {};", "/project/__marko-run__router.js")).toEqual({ code: "export {};", map: { mappings: "" } });
+    expect(transform("export {};", "C:\\project\\__marko-run__middleware.js")).toEqual({ code: "export {};", map: { mappings: "" } });
+    expect(transform("export {};", "/project/src/routes/router.js")).toBeUndefined();
+    expect(transform("export {};", "/project/__marko-run__router.js/other.js")).toBeUndefined();
+    expect(transform("export {};", "/project/__marko-run__router.js?v=1")).toBeUndefined();
+  });
+});
+
 describe("wholeRouteTypes", () => {
   test("writes the types of the routes in a file of their own, which then takes the name of the file: the file is never empty", async () => {
     wholeRouteTypes();

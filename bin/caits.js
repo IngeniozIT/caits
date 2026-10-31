@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { commandOf, painterOf } from "../quality/terminal.mjs";
-import { defaultsVersions, DEFAULTS_FOLDER, EXAMPLE_SOURCE, init, install, missingPackages, otherVersions, SOURCE, update, VERSION } from "./init.js";
+import { defaultsVersions, DEFAULTS_FOLDER, EXAMPLE_SOURCE, init, install, missingPackages, missingValues, otherVersions, SOURCE, update, VERSION } from "./init.js";
 
 const USAGE = `Usage: caits <command>
 
@@ -173,6 +173,7 @@ function runUpdate(args) {
   console.log(paint("green", `CAITS ${VERSION}: wrote ${count(written.length, "file")} in ${DEFAULTS_FOLDER}/.`));
   printOtherVersions(process.cwd());
   printMissingPackages(process.cwd());
+  printMissingValues(process.cwd());
   return 0;
 }
 
@@ -193,6 +194,18 @@ function printMissingPackages(root) {
   const quoted = names => names.map(name => `"${name}"`).join(" ");
   if (dependencies.length > 0) console.log(`  ${paint("cyan", `npm install ${quoted(dependencies)}`)}`);
   if (devDependencies.length > 0) console.log(`  ${paint("cyan", `npm install --save-dev ${quoted(devDependencies)}`)}`);
+}
+
+/**
+ * The values that package.json lacks, as `npm pkg set` writes them: each as JSON, under its section (`overrides[glob]`).
+ * @param {string} root
+ */
+function printMissingValues(root) {
+  const missing = missingValues(root);
+  if (missing.length === 0) return;
+  console.log(paint("yellow", `CAITS ${VERSION} needs values that package.json does not have. Add them, then run npm install:`));
+  const values = missing.map(({ key, name, value }) => shellQuote(`${name === undefined ? key : `${key}[${name}]`}=${JSON.stringify(value)}`));
+  console.log(`  ${paint("cyan", `npm pkg set --json ${values.join(" ")}`)}`);
 }
 
 /** @param {string} root */

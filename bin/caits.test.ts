@@ -184,6 +184,29 @@ describe("the command caits", () => {
       expect(stdout).toContain(`${yellow(`CAITS ${VERSION} needs packages that package.json does not have. Add them:`)}\n  ${cyan(`npm install "@marko/run@${SUGGESTED.dependencies["@marko/run"]}" "marko@${SUGGESTED.dependencies.marko}"`)}\n  \u001b[36mnpm install --save-dev "@eslint/js@`);
       expect(stdout).toContain(`"@stryker-mutator/vitest-runner@${SUGGESTED.devDependencies["@stryker-mutator/vitest-runner"]}"`);
     });
+
+    test("update: the values that package.json lacks in yellow, and the command that adds them in cyan", () => {
+      const folder = newFolder();
+      writeFileSync(join(folder, "package.json"), JSON.stringify({ devDependencies: { vitest: "^1.0.0" } }));
+
+      const { stdout } = caitsInColor(folder, "update");
+
+      expect(stdout).toContain(`${yellow(`CAITS ${VERSION} needs values that package.json does not have. Add them, then run npm install:`)}\n  \u001b[36mnpm pkg set --json 'type="module"' `);
+      expect(stdout).toContain(` 'overrides[glob]="^14.0.3"' 'overrides[minimatch]="^11.0.3"' 'overrides[qs]="^6.17.1"' 'allowScripts[@parcel/watcher]=false' 'allowScripts[esbuild]=false'\u001b[39m\n`);
+    });
+  });
+
+  test("update: the command that it gives adds the values that package.json lacks, the scripts with their quotes too", () => {
+    const folder = newFolder();
+    writeFileSync(join(folder, "package.json"), JSON.stringify({ name: "app", devDependencies: { vitest: "^1.0.0" } }));
+    const command = /^ {2}(npm pkg set .*)$/m.exec(caits(folder, "update").stdout)?.[1] ?? "";
+
+    expect(spawnSync("sh", ["-c", command], { cwd: folder }).status).toBe(0);
+
+    const written = JSON.parse(readFileSync(join(folder, "package.json"), "utf8")) as { scripts: Record<string, string>; allowScripts: Record<string, boolean> };
+    expect(written.scripts["test:unit"]).toBe("vitest run --config quality/vite.config.ts --exclude '**/infra/**/*.test.ts' --exclude '**/*.integration.test.ts'");
+    expect(written.allowScripts).toEqual({ "@parcel/watcher": false, esbuild: false });
+    expect(caits(folder, "update").stdout).not.toContain("needs values");
   });
 
   describe("architecture: the packages that each layer may import", () => {
@@ -381,6 +404,15 @@ describe("the command caits", () => {
       const left = readdirSync(temporary);
       expect(left.filter(entry => entry.startsWith("caits-mutation-"))).toEqual([`caits-mutation-${process.pid}-running`]);
       expect(left).toContain("other");
+    });
+
+    test("without code to mutate, as in a new project, runs no Stryker, which would warn, and passes", () => {
+      const folder = projectWithStryker(0, reportOf("Killed"), { config: "export default { mutate: [] };\n" });
+
+      const { status, stdout } = caits(folder, "mutation");
+
+      expect(status).toBe(0);
+      expect(stdout).toBe("No file matches mutate in quality/stryker.config.mjs: the mutation tests have no code to change yet.\n");
     });
 
     test("gives its options to Stryker", () => {

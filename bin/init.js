@@ -9,7 +9,8 @@ import { painterOf } from "../quality/terminal.mjs";
 /** @typedef {{ [key: string]: unknown }} PackageJson */
 /** @typedef {{ [name: string]: string }} Section */
 /** @typedef {{ dependencies?: Section; devDependencies?: Section }} Packages */
-/** @typedef {{ key: string; project: unknown; caits: string }} KeptValue */
+/** @typedef {{ key: string; project: unknown; caits: unknown }} KeptValue */
+/** @typedef {{ key: string; name?: string; value: unknown }} MissingValue */
 /** @typedef {{ written: string[]; kept: string[]; ignored: string[]; values: KeptValue[] }} Report */
 
 /**
@@ -76,7 +77,10 @@ export const DEFAULTS_FOLDER = "quality/caits";
 const headerOf = version => `// CAITS ${version} wrote this file. Do not change it: \`npx caits update\` writes it again. Change the file of the project that uses it.\n`;
 const HEADER = /^\/\/ CAITS (\S+) wrote this file\./;
 
-/** What CAITS adds to the package.json of a project. The scripts run the tools with the configuration files of quality/. */
+/**
+ * What CAITS adds to the package.json of a project. The scripts run the tools with the configuration files of quality/.
+ * @type {{ [key: string]: string | { [name: string]: string | boolean }; overrides: Section }}
+ */
 const PACKAGE = {
   type: "module",
   imports: {
@@ -103,6 +107,20 @@ const PACKAGE = {
     "test:mutation": "caits mutation",
     tdd: "vitest --config quality/vite.config.ts",
     check: "caits check typecheck lint:code lint:architecture test:coverage test:mutation test:e2e"
+  },
+  // The versions that the tools ask for have advisories, which their later versions fix: ESLint, typescript-eslint, Stryker and glob ask
+  // for minimatch 10, @marko/run for glob 13, and Stryker, through typed-rest-client, for qs 6.15.1. npm installs the fixed versions in
+  // their place, as long as the tools ask for the old ones.
+  overrides: {
+    glob: "^14.0.3",
+    minimatch: "^11.0.3",
+    qs: "^6.17.1"
+  },
+  // npm 11.20 runs the install scripts of a package only when the project allows them, and warns about the others. These tools work
+  // without theirs: esbuild checks the binary that npm installs already, and @parcel/watcher builds itself from its sources only on demand.
+  allowScripts: {
+    "@parcel/watcher": false,
+    esbuild: false
   }
 };
 
@@ -240,7 +258,8 @@ export function defaultsVersions(root) {
 }
 
 /**
- * The packages whose version in package.json is not the one that CAITS suggests. CAITS does not change them: the project chooses.
+ * The packages whose version in package.json is not the one that CAITS suggests, then the overrides of package.json that CAITS gives
+ * otherwise. CAITS does not change them: the project chooses.
  * @param {string} root
  * @returns {KeptValue[]}
  */
@@ -248,10 +267,32 @@ export function otherVersions(root) {
   const file = join(root, "package.json");
   if (!existsSync(file)) return [];
   const project = readPackage(file);
-  return Object.values(SUGGESTED).flatMap(section => Object.entries(section).flatMap(([name, caits]) => {
+  const packages = Object.values(SUGGESTED).flatMap(section => Object.entries(section).flatMap(([name, caits]) => {
     const current = dependencyOf(project, name);
     return current !== undefined && current !== caits ? [{ key: name, project: current, caits }] : [];
   }));
+  const overrides = Object.entries(PACKAGE.overrides).flatMap(([name, caits]) => {
+    const current = sectionOf(project, "overrides")?.[name];
+    return current !== undefined && current !== caits ? [{ key: `overrides.${name}`, project: current, caits }] : [];
+  });
+  return [...packages, ...overrides];
+}
+
+/**
+ * The values that CAITS adds to package.json and that it does not have: a new version of CAITS may add one, as a script or an override.
+ * `caits update` tells which. The packages are those of `missingPackages`.
+ * @param {string} root
+ * @returns {MissingValue[]}
+ */
+export function missingValues(root) {
+  const file = join(root, "package.json");
+  if (!existsSync(file)) return [];
+  const project = readPackage(file);
+  return Object.entries(PACKAGE).flatMap(/** @returns {MissingValue[]} */ ([key, value]) => {
+    if (typeof value === "string") return project[key] === undefined ? [{ key, value }] : [];
+    const section = sectionOf(project, key);
+    return Object.entries(value).filter(([name]) => section?.[name] === undefined).map(([name, item]) => ({ key, name, value: item }));
+  });
 }
 
 /**

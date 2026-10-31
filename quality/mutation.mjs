@@ -5,7 +5,7 @@
 // stops the rest, but the load slows a mutant that survives, which runs the most tests, past its time: the mutants that the clock stopped
 // run again, with more time and fewer tests at once, and their second result counts. A mutant whose test files failed to load is killed:
 // its code throws as soon as a test imports it, every time, as a failed test does, where Stryker counts an error outside the tests. The
-// run fails when a mutant is not judged (`caits mutation-summary`).
+// run fails when a mutant is not judged (`caits mutation-summary`). Without code to mutate, as in a new project, Stryker does not run.
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,6 +48,12 @@ export async function run(args, config = STRYKER_CONFIG) {
   if (!existsSync(config)) throw new Error(`${config} is missing: it gives the configuration of the mutation tests. Run \`npx caits init .\` to write it.`);
   // A run that stops before its report must not show the summary of the run before.
   rmSync(REPORT, { force: true });
+  const { mutate, thresholds } = await optionsOf(config);
+  // Without a pattern of code, Stryker warns that it found no file to mutate, then runs the tests without changing anything.
+  if (Array.isArray(mutate) && mutate.length === 0) {
+    console.log(`No file matches mutate in ${config}: the mutation tests have no code to change yet.`);
+    return 0;
+  }
   removeOrphans();
   // The tests write their temporary files in a folder of this run: a test that Stryker stops cannot remove them. In WSL, the temporary
   // folder of the system is in memory.
@@ -78,7 +84,7 @@ export async function run(args, config = STRYKER_CONFIG) {
     // The page shows the report too: Stryker breaks each < apart, so that no text of the report ends the script.
     if (existsSync(PAGE)) writeFileSync(PAGE, readFileSync(PAGE, "utf8").replace(PAGE_REPORT, (_, start) => `${start}${JSON.stringify(report).replaceAll("<", '<"+"')};`));
     console.log("");
-    return summary(["--survivors"], { breakAt: await breakOf(config) }) || status;
+    return summary(["--survivors"], { breakAt: thresholds?.break ?? null }) || status;
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
@@ -151,13 +157,14 @@ function withLoadFailuresKilled(report) {
 }
 
 /**
- * The threshold `break` of the configuration: the score under which Stryker fails, none by default.
+ * The options of the configuration that this command reads: the patterns of the code to mutate, and the threshold `break`, the score
+ * under which Stryker fails, none by default.
  * @param {string} config
- * @returns {Promise<number | null>}
+ * @returns {Promise<{ mutate?: unknown; thresholds?: { break?: number | null } }>}
  */
-async function breakOf(config) {
+async function optionsOf(config) {
   const module = config.endsWith(".json") ? { default: readJson(config) } : /** @type {{ default: unknown }} */ (await import(pathToFileURL(resolve(config)).href));
-  return /** @type {{ thresholds?: { break?: number | null } }} */ (module.default).thresholds?.break ?? null;
+  return /** @type {{ mutate?: unknown; thresholds?: { break?: number | null } }} */ (module.default);
 }
 
 /** Removes the temporary folders whose run no longer runs: Ctrl+C and `caits check` stop a run before its end. */

@@ -19,13 +19,46 @@ const OWN_FOLDER = `${normalizePath(import.meta.dirname)}/`;
 /**
  * The plugins of the kernel, for Vite and Vitest:
  * - the dependencies of the classes, for the containers (see declareDependencies);
- * - the contexts, found by convention in {source}/backend and {source}/frontend (see discovered.ts and discoveredFrontends.ts).
+ * - the contexts, found by convention in {source}/backend and {source}/frontend (see discovered.ts and discoveredFrontends.ts);
+ * - the files that @marko/run generates, without a source map (see generatedFiles);
+ * - the files that the development server does not watch (see unwatched).
  * @param {KernelOptions} [options]
  * @returns {Plugin[]}
  */
 export function kernel({ source = "src" } = {}) {
   const folder = `/${source.replace(/^\/+|\/+$/g, "")}`;
-  return [dependencies(folder), contexts(folder)];
+  return [dependencies(folder), contexts(folder), generatedFiles(), unwatched()];
+}
+
+/**
+ * The checks write their reports while the development server runs: a report is not a file of the app, and reloads no page. The sandbox
+ * of the mutation tests (.stryker-tmp/) copies the project, its tsconfig.json too: the server would empty its cache at each copy, and lose
+ * the dependencies that it optimized. A plugin says it, not the configuration of Vite: `caits dev` gives the port of HMR in `server.hmr`,
+ * which Vite merges with a warning into a `server` of the configuration.
+ * @returns {Plugin}
+ */
+function unwatched() {
+  return {
+    name: "kernel-watch",
+    config: () => ({ server: { watch: { ignored: ["**/reports/**", "**/.stryker-tmp/**"] } } })
+  };
+}
+
+/** A file that @marko/run generates, as its router: it has a path in the project, but stays in memory. */
+const GENERATED = /[/\\]__marko-run__[^?/\\]+\.js$/;
+
+/**
+ * Removes the source map of the files that @marko/run generates, after the transforms of the other plugins. Vitest replaces
+ * import.meta.env in them, with a map to the file that does not give its text: Vite looks for the file on the disk, and warns that the
+ * map points to missing source files. The code of these files is generated: no source shows more than the code.
+ * @returns {Plugin}
+ */
+function generatedFiles() {
+  return {
+    name: "kernel-generated-files",
+    enforce: "post",
+    transform: (code, id) => GENERATED.test(id) ? { code, map: { mappings: "" } } : undefined
+  };
 }
 
 /**

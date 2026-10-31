@@ -1,11 +1,13 @@
 // `npm run test:template`: makes two projects with the CAITS of this folder, as a user does, one empty and one with the example, then
-// runs all the checks of each (`npm run check`, with the coverage and the mutation tests), and its development server. It installs the
-// packages: it needs the network, or the npm cache. With --keep, the projects stay in the temporary folder.
+// runs all the checks of each (`npm run check`, with the coverage and the mutation tests), and its development server. None of them may
+// warn, and npm may report no vulnerability of their packages. It installs the packages: it needs the network, or the npm cache, and
+// knows the vulnerabilities of the day. With --keep, the projects stay in the temporary folder.
 // The example is the folder of its repository next to this one, ../caits-example, with its changes: clone IngeniozIT/caits-example there.
 import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 
 const caits = join(import.meta.dirname, "..");
 const example = join(caits, "../caits-example");
@@ -14,13 +16,37 @@ const folder = mkdtempSync(join(tmpdir(), "caits-template-"));
 const projects = [{ name: "empty", options: [] }, { name: "example", options: ["--example-source", example] }];
 
 /**
+ * The checks of `npm run check`, one by one: `caits check` shows the output of a check only when it fails, and would hide its warnings. They
+ * run first, as on a new project: Vite warns of some files only while Vitest has not kept their transforms.
+ */
+const CHECKS = ["typecheck", "lint:code", "lint:architecture", "test:coverage", "test:mutation", "test:e2e"];
+
+/** A line that warns, of npm, Vite, Vitest, Stryker, Node or CAITS, or one where npm reports vulnerabilities of the packages. */
+const WARNING = /\bwarn|deprecat|sourcemap for|[1-9]\d* (\w+ severity )?vulnerabilit/i;
+
+/**
+ * Fails when the output of a command warns: the projects that CAITS makes have nothing to fix.
+ * @param {string} output
+ * @param {string} what
+ */
+function expectNoWarning(output, what) {
+  // Without the colors of a terminal, that a tool may write even in a pipe.
+  const warnings = stripVTControlCharacters(output).split("\n").filter(line => WARNING.test(line));
+  if (warnings.length > 0) throw new Error(`${what} warns:\n${warnings.join("\n")}`);
+}
+
+/**
  * @param {string} command
  * @param {string[]} args
  * @param {string} cwd
  */
 function run(command, args, cwd) {
   console.log(`\n> ${[command, ...args].join(" ")}`);
-  if (spawnSync(command, args, { cwd, stdio: "inherit" }).status !== 0) throw new Error(`failed: ${[command, ...args].join(" ")} (in ${cwd})`);
+  const { status, stdout, stderr } = spawnSync(command, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  process.stdout.write(stdout);
+  process.stderr.write(stderr);
+  if (status !== 0) throw new Error(`failed: ${[command, ...args].join(" ")} (in ${cwd})`);
+  expectNoWarning(`${stdout}\n${stderr}`, [command, ...args].join(" "));
 }
 
 /**
@@ -72,7 +98,8 @@ async function checkDevServer(app) {
     writeFileSync(configuration, valid);
     await waitFor(() => listenings() === 3, "restart after the correction of the configuration");
     await expectPage("after the correction of the configuration");
-    console.log("The development server keeps its pages.");
+    expectNoWarning(output, "npm run dev");
+    console.log("The development server keeps its pages, and warns of nothing.");
   } finally {
     // The server has a process group of its own (detached): npm, and the node of the server. Without a pid, the spawn failed. A server
     // that stopped already has no group: the kill fails, and the test shows the error of the check.
@@ -90,10 +117,11 @@ try {
   for (const { name, options } of projects) {
     const app = join(folder, name);
     run("node", [join(caits, "bin/caits.js"), "init", app, "--caits", `file:${tarball}`, ...options], folder);
+    for (const check of CHECKS) run("npm", ["run", check], app);
     run("npm", ["run", "check"], app);
     await checkDevServer(app);
   }
-  console.log(`\nThe projects that CAITS makes pass all their checks.`);
+  console.log(`\nThe projects that CAITS makes pass all their checks, and warn of nothing.`);
 } finally {
   if (process.argv.includes("--keep")) console.log(`The projects are in ${folder}`);
   else rmSync(folder, { recursive: true, force: true });

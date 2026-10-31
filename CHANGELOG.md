@@ -2,6 +2,29 @@
 
 The changes of each version of CAITS, the newest first. A version is a git tag, and a version of the package `@ingenioz-it/caits` on npm: `npx @ingenioz-it/caits@<version> init my-app`.
 
+## Unreleased
+
+### Packages
+
+- A new project has no vulnerability, and warns of nothing, from `npm install` to `npm run check`. Before, `npm install` reported 21 vulnerabilities (20 moderate, 1 high) and warned of install scripts. `init` writes two values more in package.json:
+  - `overrides`: the tools ask for versions that have advisories, which their later versions fix. ESLint, typescript-eslint, Stryker and glob ask for minimatch 10, @marko/run for glob 13, and Stryker, through typed-rest-client, for qs 6.15.1: npm installs minimatch 11, glob 14 and qs 6.17 in their place.
+  - `allowScripts`: npm 11.20 runs the install scripts of a package only when the project allows them, and warns about the others. esbuild and @parcel/watcher work without theirs: CAITS denies them, and npm runs no code of theirs as it installs.
+- `caits update` gives the `npm pkg set` command that adds to package.json the values that CAITS adds and that it lacks, as these two, and tells an override whose version differs from that of CAITS with the other versions. In a project, run `npx caits update`, then the commands that it gives, then `npm install`.
+- CAITS suggests the last version of each tool: happy-dom 21.0.4 (which fixes two advisories, one high: it loads no stylesheet and no iframe by default), ESLint 10.14, typescript-eslint 8.72, Vite 8.3.5, Vitest 5.0.5, @marko/run 0.11.16, Marko 6.4.7, @marko/compiler 5.42.13, Playwright 1.64.1, @vitest/coverage-v8 5.0.5, Sass 1.107 and @types/node 26.6.6. TypeScript stays at 6: typescript-eslint takes no version from 6.1 on, and @marko/type-check uses its own TypeScript 6. CAITS needs Vite 8.1 at least, and uses magic-string 1.
+
+### Development server
+
+- `caits dev` gives the port of HMR in `server.ws`, which Vite reads since its version 8.1, and still in `server.hmr`, which @marko/run reads before it looks for a free port. The configuration of CAITS (quality/caits/vite.ts) has no `server` any more: the kernel plugin tells the development server the files that it does not watch, the reports and the sandbox of the mutation tests. Before, Vite warned at each start that `server.hmr.port` is deprecated, as it merged the port into the `server` of the configuration. A project whose quality/vite.config.ts gives a `server` brings the warning back: give it from a plugin, in its `config` hook.
+
+### Tests
+
+- The files that @marko/run generates, as its router, have no source map. Vitest replaces `import.meta.env` in them, with a map to a file that is not on the disk, and Vite warned at the first run of the tests, and after each change: `Sourcemap for ".../__marko-run__router.js" points to missing source files`.
+
+### Mutation tests
+
+- Stryker no longer warns of static mutants, the changes of code that runs as a module loads: CAITS tests them all, and `caits mutation` counts as killed one whose code throws as soon as a test loads it.
+- Stryker no longer warns of a pattern of `mutate` that matches no file, as `!src/frontend/*/di.ts` in a project without a frontend context, or `src/**/*.ts` in a new project: the defaults of CAITS keep the patterns that match files of the project. Without any, as in a new project, `caits mutation` runs no Stryker, which warned that it found no file to mutate, and passes.
+
 ## 0.8.0
 
 ### Kernel

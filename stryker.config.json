@@ -44,5 +44,8 @@
   "timeoutMS": 15000,
   "ignorePatterns": [
     "reports"
-  ]
+  ],
+  "warnings": {
+    "slow": false
+  }
 }

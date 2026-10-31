@@ -25,10 +25,6 @@ export default defineConfig({
   // The build keeps the names of the classes: the errors of CAITS name them, and the build would else number a class that has the name
   // of another, as a DTO of the backend and one of the frontend (`No handler takes AddMessageCommand$1`).
   build: { outDir: OUT_DIR, rolldownOptions: { output: { keepNames: true } } },
-  // The checks write their reports while the development server runs: a report is not a file of the app, and reloads no page. The
-  // sandbox of the mutation tests (.stryker-tmp/) copies the project, its tsconfig.json too: the server would empty its cache at each
-  // copy, and lose the dependencies that it optimized.
-  server: { watch: { ignored: ["**/reports/**", "**/.stryker-tmp/**"] } },
   css: { preprocessorOptions: { scss: { loadPaths: [STYLE_FOLDER] } } },
   test: {
     include: ["src/**/*.test.ts", "test/**/*.test.ts", "quality/**/*.test.mjs"],

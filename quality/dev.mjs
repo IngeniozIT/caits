@@ -52,7 +52,8 @@ export async function run(args) {
         root: process.cwd(),
         configFile: VITE_CONFIG,
         build: { outDir: OUT_DIR },
-        server: { hmr: { port: hmrPort } },
+        // Vite reads the port of HMR in server.ws. @marko/run reads it in server.hmr, and else looks for a free port.
+        server: { ws: { port: hmrPort }, hmr: { port: hmrPort } },
         plugins: [restartsTakenBy(server => {
           vite = server;
           server.restart = restart;
