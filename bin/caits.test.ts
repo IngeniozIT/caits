@@ -305,6 +305,42 @@ describe("the command caits", () => {
       expect(stdout).toContain("Mutation score: 100.0%  (2 killed of 2 valid mutants)\n");
     });
 
+    /** A mutant not judged, with the reason that Stryker gives for an error outside the tests: each test file that failed to load, then the other errors. */
+    const outside = (...lines: string[]) => ({ status: "RuntimeError", statusReason: `An error occurred outside of a test run: ${lines.join("\n")}` });
+
+    test("counts as killed a mutant whose test files failed to load, and nothing else: its code throws as soon as a test imports it, every time", () => {
+      const folder = projectWithStryker(0, reportOf("Killed", outside("/app/src/a.test.ts: Invalid language tag: ", "/app/src/b.spec.mjs: StrykerJS: Test file execution failed")));
+
+      const { status, stdout } = caits(folder, "mutation");
+
+      expect(status).toBe(0);
+      expect(stdout).toContain("Mutation score: 100.0%  (2 killed of 2 valid mutants)\n");
+      expect(stdout).not.toContain("not judged");
+      const killed = {
+        status: "Killed",
+        statusReason: "The test files that import its code failed to load. An error occurred outside of a test run: /app/src/a.test.ts: Invalid language tag: \n/app/src/b.spec.mjs: StrykerJS: Test file execution failed"
+      };
+      expect(JSON.parse(readFileSync(join(folder, REPORT), "utf8"))).toEqual(reportOf("Killed", killed));
+      expect(readFileSync(join(folder, PAGE), "utf8")).toContain(pageOf(reportOf("Killed", killed)));
+    });
+
+    test("leaves not judged a mutant whose tests ended in another error: after the tests, in a message on more lines, in a file that is not a test", () => {
+      const folder = projectWithStryker(0, reportOf(
+        outside("/app/src/a.test.ts: Invalid language tag: ", "Error: write after end"),
+        outside("Error: write after end, in /app/src/a.test.ts: the stream closed"),
+        outside("/app/src/a.test.ts: the first line of a message", "and its second line"),
+        outside("/app/src/a.ts: Invalid language tag: "),
+        { status: "RuntimeError", statusReason: "/app/src/a.test.ts: Invalid language tag: " },
+        { status: "RuntimeError" }
+      ));
+
+      const { status, stdout } = caits(folder, "mutation");
+
+      expect(status).toBe(1);
+      expect(stdout).toContain("Mutation score: 0.0%  (0 killed of 6 valid mutants)\n");
+      expect(stdout).toContain("6 mutants are not judged");
+    });
+
     test("when the second run stops before its report, keeps the first, and fails", () => {
       const folder = projectWithStryker(0, reportOf("Killed", late), { again: { code: 2 } });
 

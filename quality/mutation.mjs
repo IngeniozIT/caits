@@ -3,8 +3,9 @@
 // Stryker stops the tests of a mutant that run too long, and counts the mutant as killed: the mutant may make the code loop without end.
 // Its counter stops most of these loops, as it counts the runs of the code of the mutant, whatever the load of the machine. The clock
 // stops the rest, but the load slows a mutant that survives, which runs the most tests, past its time: the mutants that the clock stopped
-// run again, with more time and fewer tests at once, and their second result counts. The run fails when a mutant is not judged
-// (`caits mutation-summary`).
+// run again, with more time and fewer tests at once, and their second result counts. A mutant whose test files failed to load is killed:
+// its code throws as soon as a test imports it, every time, as a failed test does, where Stryker counts an error outside the tests. The
+// run fails when a mutant is not judged (`caits mutation-summary`).
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +25,12 @@ const PAGE_REPORT = /^( *app\.report = ).*;$/m;
 
 /** The second run of the mutants that the clock stopped: more time for each, fewer at once, and the report in JSON only. */
 const SECOND_RUN = ["--concurrency", "4", "--timeoutFactor", "3", "--reporters", "json"];
+
+/** How Stryker starts the reason of an error outside the tests: then come the test files that failed to load, then the other errors. */
+const OUTSIDE = "An error occurred outside of a test run: ";
+
+/** A test file that failed to load, as Stryker gives it on a line of its own: `<its path>: <the message>`. */
+const LOAD_FAILURE = /^\/.*\.(?:test|spec)\.[cm]?[jt]sx?: /;
 
 /** The temporary folders of the runs, in the temporary folder of the system: `caits-mutation-<pid of their run>-<random>`. */
 const TEMPORARY = /^caits-mutation-(\d+)-/;
@@ -49,6 +56,7 @@ export async function run(args, config = STRYKER_CONFIG) {
     const status = await stryker([config, ...args], temporary);
     if (!existsSync(REPORT)) return status;
     const first = readReport();
+    let report = first;
     const late = Object.entries(first.files).flatMap(([file, { mutants }]) => mutants.filter(stoppedByTheClock).map(mutant => ({ file, mutant })));
     if (late.length > 0) {
       const one = late.length === 1;
@@ -63,11 +71,12 @@ export async function run(args, config = STRYKER_CONFIG) {
         console.log(`\n${painterOf(process.stdout)("red", "The second run stopped before its report: the mutants that the clock stopped count as killed, as Stryker counts them. Run the mutation tests again.")}`);
         return 1;
       }
-      const report = withSecondResults(first, readReport());
-      writeFileSync(REPORT, JSON.stringify(report));
-      // The page shows the report too: Stryker breaks each < apart, so that no text of the report ends the script.
-      if (existsSync(PAGE)) writeFileSync(PAGE, readFileSync(PAGE, "utf8").replace(PAGE_REPORT, (_, start) => `${start}${JSON.stringify(report).replaceAll("<", '<"+"')};`));
+      report = withSecondResults(first, readReport());
     }
+    report = withLoadFailuresKilled(report);
+    writeFileSync(REPORT, JSON.stringify(report));
+    // The page shows the report too: Stryker breaks each < apart, so that no text of the report ends the script.
+    if (existsSync(PAGE)) writeFileSync(PAGE, readFileSync(PAGE, "utf8").replace(PAGE_REPORT, (_, start) => `${start}${JSON.stringify(report).replaceAll("<", '<"+"')};`));
     console.log("");
     return summary(["--survivors"], { breakAt: await breakOf(config) }) || status;
   } finally {
@@ -118,6 +127,27 @@ function withSecondResults(first, second) {
     })
   }]));
   return { ...first, files };
+}
+
+/**
+ * The test files of the mutant failed to load, and nothing else: each line of its reason is a test file that failed to load. An error
+ * after the tests, or a message on more than one line, has a line that is not one, and the mutant stays not judged.
+ * @type {(mutant: Mutant) => boolean}
+ */
+const failedToLoad = ({ status, statusReason }) => status === "RuntimeError" && typeof statusReason === "string" && statusReason.startsWith(OUTSIDE)
+  && statusReason.slice(OUTSIDE.length).split("\n").every(line => LOAD_FAILURE.test(line));
+
+/**
+ * The report, where a mutant whose test files failed to load is killed.
+ * @param {Report} report
+ * @returns {Report}
+ */
+function withLoadFailuresKilled(report) {
+  const files = Object.fromEntries(Object.entries(report.files).map(([file, data]) => [file, {
+    ...data,
+    mutants: data.mutants.map(mutant => failedToLoad(mutant) ? { ...mutant, status: "Killed", statusReason: `The test files that import its code failed to load. ${mutant.statusReason}` } : mutant)
+  }]));
+  return { ...report, files };
 }
 
 /**

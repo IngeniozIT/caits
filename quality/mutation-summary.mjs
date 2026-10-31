@@ -14,7 +14,8 @@ const readJson = file => JSON.parse(readFileSync(file, "utf8"));
 
 /**
  * Stryker leaves out of the score a mutant whose tests ended in an error that is not a failed test: an error outside the tests, or a test
- * runner that stopped. Nothing tells whether a test sees the mutant: it is not judged. @type {(m: Mutant) => boolean}
+ * runner that stopped. Nothing tells whether a test sees the mutant: it is not judged. `caits mutation` kills a mutant whose test files
+ * failed to load, and nothing else. @type {(m: Mutant) => boolean}
  */
 const notJudged = m => m.status === "RuntimeError";
 
